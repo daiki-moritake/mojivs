@@ -1,0 +1,8 @@
+chardet==5.2.0
+fonttools==4.53.1
+numpy==2.1.0
+pillow==10.4.0
+pycairo==1.26.1
+reportlab==4.2.2
+scipy==1.14.1
+svgwrite==1.4.3
