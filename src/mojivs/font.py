@@ -44,6 +44,8 @@ class IVSFont:
         self._glyph_names = frozenset(self._ttfont.getGlyphNames())
         self._cmap = self._ttfont.getBestCmap()  # codepoint -> glyph name
         self._hmtx = self._ttfont["hmtx"]
+        self._vmtx = self._ttfont["vmtx"] if "vmtx" in self._ttfont else None
+        self._vorg = self._ttfont["VORG"] if "VORG" in self._ttfont else None
 
         head = self._ttfont["head"]
         hhea = self._ttfont["hhea"]
@@ -97,8 +99,37 @@ class IVSFont:
         """Horizontal advance width of ``glyph_name``, in font units."""
         return self._hmtx[glyph_name][0]
 
+    @property
+    def has_vertical_metrics(self) -> bool:
+        """Whether the font carries vertical metrics (a ``vmtx`` table)."""
+        return self._vmtx is not None
+
+    def advance_height(self, glyph_name: str) -> int:
+        """Vertical advance height of ``glyph_name``, in font units.
+
+        Falls back to the line height when the font has no ``vmtx`` table.
+        """
+        if self._vmtx is None:
+            return self.line_height
+        return self._vmtx[glyph_name][0]
+
+    def vertical_origin(self, glyph_name: str) -> int:
+        """Y of the glyph's vertical origin above the baseline, in font units.
+
+        Uses the ``VORG`` table when present, otherwise the ascent.
+        """
+        if self._vorg is not None:
+            return self._vorg.VOriginRecords.get(
+                glyph_name, self._vorg.defaultVertOriginY
+            )
+        return self.ascent
+
     def resolve_run(
-        self, text: str, *, on_missing: str = "raise"
+        self,
+        text: str,
+        *,
+        on_missing: str = "raise",
+        substitute: dict[str, str] | None = None,
     ) -> list[tuple[str, str]]:
         """Turn ``text`` into an ordered list of ``(cluster, glyph_name)`` pairs.
 
@@ -107,6 +138,9 @@ class IVSFont:
             on_missing: ``"raise"`` (default) to raise
                 :class:`~mojivs.errors.UnsupportedCharacterError` for unknown
                 clusters, or ``"skip"`` to drop them silently.
+            substitute: Optional mapping applied to base characters before
+                lookup (e.g. vertical punctuation forms). If a substituted
+                character has no glyph, the original is tried.
 
         Returns:
             The resolvable clusters paired with their glyph names.
@@ -117,18 +151,32 @@ class IVSFont:
         run: list[tuple[str, str]] = []
         missing: list[str] = []
         for base, selectors in ivs.iter_clusters(text):
-            glyph_name = self.glyph_name(base, selectors)
-            cluster = base + "".join(selectors)
-            if glyph_name is None:
-                missing.append(cluster)
+            candidates = [base]
+            if substitute and base in substitute:
+                candidates.insert(0, substitute[base])
+
+            for candidate in candidates:
+                glyph_name = self.glyph_name(candidate, selectors)
+                if glyph_name is not None:
+                    run.append((candidate + "".join(selectors), glyph_name))
+                    break
             else:
-                run.append((cluster, glyph_name))
+                missing.append(base + "".join(selectors))
 
         if missing and on_missing == "raise":
             raise UnsupportedCharacterError(missing)
         return run
 
-    # -- convenience: delegate to the renderer ------------------------------
+    # -- convenience: delegate to shaping / rendering / export --------------
+
+    def shape(self, text: str, **kwargs):
+        """Lay out ``text`` into positioned glyphs.
+
+        Thin convenience wrapper around :func:`mojivs.shaping.shape`.
+        """
+        from .shaping import shape as _shape
+
+        return _shape(self, text, **kwargs)
 
     def render(self, text: str, **kwargs):
         """Render ``text`` to a :class:`PIL.Image.Image`.
@@ -138,6 +186,26 @@ class IVSFont:
         from .render import render as _render
 
         return _render(self, text, **kwargs)
+
+    def to_svg(self, text: str, **kwargs) -> str:
+        """Render ``text`` to an SVG document string.
+
+        Thin convenience wrapper around :func:`mojivs.export.to_svg`.
+        """
+        from .export import to_svg as _to_svg
+
+        return _to_svg(self, text, **kwargs)
+
+    def to_pdf(self, text: str, path, **kwargs) -> None:
+        """Render ``text`` to a single-page PDF at ``path``.
+
+        Requires the optional ``reportlab`` dependency
+        (``pip install mojivs[pdf]``). Thin wrapper around
+        :func:`mojivs.export.to_pdf`.
+        """
+        from .export import to_pdf as _to_pdf
+
+        return _to_pdf(self, text, path, **kwargs)
 
     def render_to_box(self, text: str, box, **kwargs):
         """Render ``text`` fitted into a ``(width, height)`` pixel box.
