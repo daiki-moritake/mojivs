@@ -34,8 +34,28 @@ def main() -> None:
         background="#1a1a1a",
     ).save(OUT / "outlined.png")
 
-    # 3. Fit into an exact pixel box (compresses or justifies to fill).
+    # 3. Multi-line, centered.
+    font.render(
+        "異体字\nレンダリング", size=64, align="center", color="#111"
+    ).save(OUT / "multiline.png")
+
+    # 4. Vertical writing (columns run right-to-left; punctuation is substituted).
+    font.render(
+        "辻\U000e0100鯛の\n「縦書き」。",
+        size=72,
+        direction="vertical",
+        color="#111",
+    ).save(OUT / "vertical.png")
+
+    # 5. Fit into an exact pixel box (compresses or justifies to fill).
     font.render_to_box("辻鯛テ体", (400, 80), color="#000").save(OUT / "boxed.png")
+
+    # 6. Vector output. SVG needs no extra deps; PDF needs `mojivs[pdf]`.
+    (OUT / "sample.svg").write_text(font.to_svg(TEXT, size=96, color="#1a1a1a"))
+    try:
+        font.to_pdf(TEXT, OUT / "sample.pdf", size=96)
+    except RuntimeError as exc:
+        print("skipping PDF:", exc)
 
     # Inspect coverage without rendering.
     print("supports 辻鯛テ体:", font.supports("辻鯛テ体"))
