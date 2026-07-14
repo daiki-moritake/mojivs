@@ -22,16 +22,23 @@ The package is layered:
 from __future__ import annotations
 
 from .errors import MojivsError, UnsupportedCharacterError
+from .export import to_pdf, to_svg
 from .font import IVSFont
 from .ivs import is_variation_selector, iter_clusters
 from .render import render, render_to_box
+from .shaping import PlacedGlyph, ShapedText, shape
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "IVSFont",
     "render",
     "render_to_box",
+    "shape",
+    "to_svg",
+    "to_pdf",
+    "ShapedText",
+    "PlacedGlyph",
     "is_variation_selector",
     "iter_clusters",
     "MojivsError",
