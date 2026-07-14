@@ -47,3 +47,17 @@ def test_stroke_widens_image(font):
     plain = font.render("辻", size=48)
     stroked = font.render("辻", size=48, stroke="#f00", stroke_width=6)
     assert stroked.width >= plain.width
+
+
+def test_render_multiline_is_taller(font):
+    one = font.render("辻鯛", size=48)
+    two = font.render("辻鯛\nテ体", size=48)
+    assert two.height > one.height
+
+
+def test_render_vertical(font):
+    img = font.render("あいうえ", size=48, direction="vertical")
+    assert img.mode == "RGBA"
+    # A single vertical column is much taller than it is wide.
+    assert img.height > img.width
+    assert img.getchannel("A").getbbox() is not None
