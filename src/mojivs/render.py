@@ -1,63 +1,33 @@
-"""Rasterizer — turns resolved glyph runs into :class:`PIL.Image.Image` objects.
+"""Rasterizer — turns shaped glyph runs into :class:`PIL.Image.Image` objects.
 
 This is the "A" layer: it depends on cairo/Pillow/numpy and builds on top of the
-dependency-light resolver. Two entry points are provided:
+shaping layer (:mod:`mojivs.shaping`). Two entry points are provided:
 
-* :func:`render` — natural horizontal layout using the font's own advance
-  widths, at a given em pixel size. This is what most callers want.
-* :func:`render_to_box` — fit the text into an exact ``(width, height)`` pixel
-  box, compressing when the text is too wide and justifying (spreading the
-  characters) when it is too narrow.
+* :func:`render` — natural layout (horizontal or vertical, multi-line) at a
+  given em pixel size. This is what most callers want.
+* :func:`render_to_box` — fit a single horizontal line into an exact
+  ``(width, height)`` pixel box, compressing when too wide and justifying
+  (spreading the characters) when too narrow.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence, Union
+from typing import TYPE_CHECKING
 
 import cairo
 import numpy as np
 from fontTools.pens.basePen import BasePen
 from PIL import Image
 
+from .colors import Color, RGBA, to_rgba
+from .shaping import Align, Direction, PlacedGlyph, shape
+
 if TYPE_CHECKING:
     from .font import IVSFont
 
-Color = Union[str, Sequence[int], None]
-RGBA = tuple[float, float, float, float]
-
-_TRANSPARENT: RGBA = (0.0, 0.0, 0.0, 0.0)
-
-
-def _to_rgba(color: Color, default: RGBA = _TRANSPARENT) -> RGBA:
-    """Normalize a color to ``(r, g, b, a)`` floats in the range 0.0–1.0.
-
-    Accepts ``None`` (returns ``default``), a ``"#rgb"`` / ``"#rrggbb"`` /
-    ``"#rrggbbaa"`` hex string, or an ``(r, g, b)`` / ``(r, g, b, a)`` sequence
-    of 0–255 integers.
-    """
-    if color is None:
-        return default
-
-    if isinstance(color, str):
-        h = color.lstrip("#")
-        if len(h) == 3:
-            h = "".join(c * 2 for c in h)
-        if len(h) not in (6, 8):
-            raise ValueError(f"invalid hex color: {color!r}")
-        values = [int(h[i : i + 2], 16) for i in range(0, len(h), 2)]
-    else:
-        values = list(color)
-
-    if len(values) == 3:
-        values.append(255)
-    if len(values) != 4:
-        raise ValueError(f"color must have 3 or 4 components, got {color!r}")
-    r, g, b, a = values
-    return (r / 255.0, g / 255.0, b / 255.0, a / 255.0)
-
 
 class _CairoPen(BasePen):
-    """A pen that draws a glyph outline into a cairo context in device space.
+    """Draws a glyph outline into a cairo context in device space.
 
     Font-unit points ``(x, y)`` (y-up) are mapped to device pixels
     ``(ox + x*sx, oy - y*sy)`` (y-down), so the caller controls position and
@@ -119,22 +89,18 @@ def _surface_to_image(surface: cairo.ImageSurface) -> Image.Image:
     return Image.fromarray(out, "RGBA")
 
 
-def _draw_run(
+def _rasterize(
     font: "IVSFont",
-    glyph_names: list[str],
-    *,
+    glyphs,
     width: int,
     height: int,
-    scale_x: float,
-    scale_y: float,
-    baseline: float,
-    positions_px: list[float],
+    *,
     fill: RGBA,
     stroke: RGBA,
     stroke_width: float,
     background: RGBA,
 ) -> Image.Image:
-    """Rasterize a run of glyphs onto a single surface and return an RGBA image."""
+    """Rasterize placed glyphs onto a single surface and return an RGBA image."""
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, max(width, 1), max(height, 1))
     ctx = cairo.Context(surface)
 
@@ -143,9 +109,9 @@ def _draw_run(
         ctx.paint()
 
     glyph_set = font.glyph_set
-    for glyph_name, x in zip(glyph_names, positions_px):
-        pen = _CairoPen(glyph_set, ctx, scale_x, scale_y, x, baseline)
-        glyph_set[glyph_name].draw(pen)
+    for pg in glyphs:
+        pen = _CairoPen(glyph_set, ctx, pg.x_scale, pg.y_scale, pg.x, pg.y)
+        glyph_set[pg.glyph_name].draw(pen)
 
         if stroke_width > 0 and stroke[3] > 0:
             ctx.set_line_width(stroke_width)
@@ -164,20 +130,27 @@ def render(
     text: str,
     *,
     size: int = 64,
+    direction: Direction = "horizontal",
+    align: Align = "start",
+    line_spacing: float = 1.0,
+    letter_spacing: float = 0.0,
+    padding: int = 0,
     color: Color = "#000000",
     stroke: Color = None,
     stroke_width: float = 0.0,
     background: Color = None,
-    letter_spacing: float = 0.0,
-    padding: int = 0,
     on_missing: str = "raise",
 ) -> Image.Image:
     """Render ``text`` to an RGBA image using the font's natural metrics.
 
     Args:
         font: The :class:`~mojivs.font.IVSFont` to draw with.
-        text: The text to render (may contain IVS variation selectors).
-        size: Em size in pixels. A full-width CJK glyph is about ``size`` px wide.
+        text: The text to render. ``\\n`` starts a new line (horizontal) or
+            column (vertical). May contain IVS variation selectors.
+        size: Em size in pixels. A full-width CJK glyph is about ``size`` px.
+        direction: ``"horizontal"`` or ``"vertical"``.
+        align: Cross-axis alignment of shorter lines/columns.
+        line_spacing: Multiplier applied to the line/column advance.
         color: Fill color (hex string or 0–255 RGB/RGBA tuple).
         stroke: Outline color. If ``None``, no outline is drawn.
         stroke_width: Outline width in pixels.
@@ -189,37 +162,27 @@ def render(
     Returns:
         A :class:`PIL.Image.Image` in ``RGBA`` mode.
     """
-    run = font.resolve_run(text, on_missing=on_missing)
-    scale = size / font.units_per_em
-
-    glyph_names = [glyph_name for _, glyph_name in run]
-    advances_px = [font.advance_width(g) * scale for g in glyph_names]
-
-    pad = padding + (stroke_width / 2.0)
-    positions_px: list[float] = []
-    x = pad
-    for adv in advances_px:
-        positions_px.append(x)
-        x += adv + letter_spacing
-    content_width = x - letter_spacing - pad if advances_px else 0.0
-
-    width = int(round(content_width + 2 * pad))
-    height = int(round(font.line_height * scale + 2 * pad))
-    baseline = pad + font.ascent * scale
-
-    return _draw_run(
+    pad = padding + stroke_width / 2.0
+    shaped = shape(
         font,
-        glyph_names,
-        width=width,
-        height=height,
-        scale_x=scale,
-        scale_y=scale,
-        baseline=baseline,
-        positions_px=positions_px,
-        fill=_to_rgba(color),
-        stroke=_to_rgba(stroke),
+        text,
+        size=size,
+        direction=direction,
+        align=align,
+        line_spacing=line_spacing,
+        letter_spacing=letter_spacing,
+        padding=pad,
+        on_missing=on_missing,
+    )
+    return _rasterize(
+        font,
+        shaped.glyphs,
+        shaped.width,
+        shaped.height,
+        fill=to_rgba(color),
+        stroke=to_rgba(stroke),
         stroke_width=stroke_width,
-        background=_to_rgba(background),
+        background=to_rgba(background),
     )
 
 
@@ -234,7 +197,7 @@ def render_to_box(
     background: Color = None,
     on_missing: str = "raise",
 ) -> Image.Image:
-    """Render ``text`` fitted into an exact ``box = (width, height)`` in pixels.
+    """Render a single horizontal line fitted into ``box = (width, height)`` px.
 
     The line height is scaled to ``height``. If the text is wider than ``width``
     it is compressed horizontally; if narrower, the characters are spread evenly
@@ -247,9 +210,7 @@ def render_to_box(
     scale_y = inner_h / font.line_height
 
     glyph_names = [glyph_name for _, glyph_name in run]
-    natural_advances = [font.advance_width(g) * scale_y for g in glyph_names]
-    natural_width = sum(natural_advances)
-
+    natural_width = sum(font.advance_width(g) * scale_y for g in glyph_names)
     inner_w = max(box_w - stroke_width, 1.0)
 
     scale_x = scale_y
@@ -261,27 +222,21 @@ def render_to_box(
         # Too narrow: distribute the slack as even inter-character spacing.
         extra_spacing = (inner_w - natural_width) / len(glyph_names)
 
-    pad_x = stroke_width / 2.0
     baseline = stroke_width / 2.0 + font.ascent * scale_y
+    x = stroke_width / 2.0 + extra_spacing / 2.0
 
-    positions_px: list[float] = []
-    advances_px = [font.advance_width(g) * scale_x for g in glyph_names]
-    x = pad_x + extra_spacing / 2.0
-    for adv in advances_px:
-        positions_px.append(x)
-        x += adv + extra_spacing
+    placed: list[PlacedGlyph] = []
+    for cluster, glyph_name in run:
+        placed.append(PlacedGlyph(glyph_name, cluster, x, baseline, scale_x, scale_y))
+        x += font.advance_width(glyph_name) * scale_x + extra_spacing
 
-    return _draw_run(
+    return _rasterize(
         font,
-        glyph_names,
-        width=box_w,
-        height=box_h,
-        scale_x=scale_x,
-        scale_y=scale_y,
-        baseline=baseline,
-        positions_px=positions_px,
-        fill=_to_rgba(color),
-        stroke=_to_rgba(stroke),
+        placed,
+        box_w,
+        box_h,
+        fill=to_rgba(color),
+        stroke=to_rgba(stroke),
         stroke_width=stroke_width,
-        background=_to_rgba(background),
+        background=to_rgba(background),
     )
