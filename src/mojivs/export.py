@@ -41,7 +41,7 @@ def _paint_attrs(color: Color, stroke: Color, stroke_width: float) -> str:
 
 
 def _svg_from_shaped(
-    font: "IVSFont",
+    font: IVSFont,
     shaped: ShapedText,
     *,
     color: Color,
@@ -72,17 +72,14 @@ def _svg_from_shaped(
             continue
         transform = f"matrix({','.join(_num(v) for v in pg.transform)})"
         title = escape(pg.cluster)
-        parts.append(
-            f'<path transform="{transform}" {paint} d="{d}"><title>{title}'
-            f"</title></path>"
-        )
+        parts.append(f'<path transform="{transform}" {paint} d="{d}"><title>{title}</title></path>')
 
     parts.append("</svg>")
     return "\n".join(parts)
 
 
 def to_svg(
-    font: "IVSFont",
+    font: IVSFont,
     text: str,
     *,
     size: int = 64,
@@ -161,7 +158,7 @@ class _ReportlabPen(BasePen):
 
 
 def to_pdf(
-    font: "IVSFont",
+    font: IVSFont,
     text: str,
     path,
     *,

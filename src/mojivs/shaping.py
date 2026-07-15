@@ -21,8 +21,6 @@ from typing import TYPE_CHECKING, Literal
 from fontTools.misc.transform import Transform
 from fontTools.pens.boundsPen import ControlBoundsPen
 
-from . import ivs
-
 if TYPE_CHECKING:
     from .font import IVSFont
 
@@ -54,6 +52,7 @@ def is_upright_in_vertical(char: str) -> bool:
     """Whether ``char`` stays upright (vs. rotated) in vertical text."""
     cp = ord(char)
     return any(lo <= cp <= hi for lo, hi in _UPRIGHT_RANGES)
+
 
 #: Characters that take a dedicated glyph when set vertically.
 VERTICAL_FORMS = {
@@ -135,7 +134,7 @@ def _aligned_offset(extent: float, max_extent: float, align: Align) -> float:
 
 
 def _shape_horizontal(
-    font: "IVSFont",
+    font: IVSFont,
     lines: list[list[tuple[str, str]]],
     *,
     scale: float,
@@ -147,8 +146,7 @@ def _shape_horizontal(
     line_advance = line_box * line_spacing
 
     line_widths = [
-        sum(font.advance_width(g) * scale for _, g in line)
-        + letter_spacing * max(len(line) - 1, 0)
+        sum(font.advance_width(g) * scale for _, g in line) + letter_spacing * max(len(line) - 1, 0)
         for line in lines
     ]
     max_width = max(line_widths, default=0.0)
@@ -182,7 +180,7 @@ def _is_ascii_digit(cluster: str) -> bool:
 
 
 def _vertical_cells(
-    font: "IVSFont",
+    font: IVSFont,
     column: list[tuple[str, str]],
     *,
     scale: float,
@@ -217,7 +215,7 @@ def _vertical_cells(
 
 def _place_cell(
     placed: list[PlacedGlyph],
-    font: "IVSFont",
+    font: IVSFont,
     cell: _VCell,
     *,
     center_x: float,
@@ -253,7 +251,7 @@ def _place_cell(
 
 
 def _shape_vertical(
-    font: "IVSFont",
+    font: IVSFont,
     columns: list[list[tuple[str, str]]],
     *,
     scale: float,
@@ -295,11 +293,12 @@ def _shape_vertical(
 
 def _shift(transform: Transform, dx: float, dy: float) -> Transform:
     """Translate a device-space affine by ``(dx, dy)`` in the output plane."""
-    return Transform(transform[0], transform[1], transform[2], transform[3],
-                     transform[4] + dx, transform[5] + dy)
+    return Transform(
+        transform[0], transform[1], transform[2], transform[3], transform[4] + dx, transform[5] + dy
+    )
 
 
-def _ink_bounds(font: "IVSFont", placed: list[PlacedGlyph]):
+def _ink_bounds(font: IVSFont, placed: list[PlacedGlyph]):
     """Device-space bounding box of all glyph ink, or ``None`` if there is none.
 
     Uses control-point bounds (a cheap superset of the true outline bounds),
@@ -324,7 +323,7 @@ def _ink_bounds(font: "IVSFont", placed: list[PlacedGlyph]):
 
 
 def _finalize(
-    font: "IVSFont",
+    font: IVSFont,
     placed: list[PlacedGlyph],
     advance_width: float,
     advance_height: float,
@@ -352,7 +351,7 @@ def _finalize(
 
 
 def shape(
-    font: "IVSFont",
+    font: IVSFont,
     text: str,
     *,
     size: int = 64,
@@ -429,13 +428,11 @@ def shape(
             letter_spacing=letter_spacing,
         )
 
-    return _finalize(
-        font, placed, adv_w, adv_h, padding=padding, direction=direction
-    )
+    return _finalize(font, placed, adv_w, adv_h, padding=padding, direction=direction)
 
 
 def shape_for_output(
-    font: "IVSFont", text: str, *, stroke_width: float = 0.0, padding: float = 0.0, **layout
+    font: IVSFont, text: str, *, stroke_width: float = 0.0, padding: float = 0.0, **layout
 ) -> ShapedText:
     """Shape ``text`` for a renderer, widening the padding to fit the stroke.
 
