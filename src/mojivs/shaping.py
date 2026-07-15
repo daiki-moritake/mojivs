@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from fontTools.misc.transform import Transform
+from fontTools.pens.boundsPen import ControlBoundsPen
 
 from . import ivs
 
@@ -141,8 +142,7 @@ def _shape_horizontal(
     align: Align,
     line_spacing: float,
     letter_spacing: float,
-    padding: float,
-) -> ShapedText:
+) -> tuple[list[PlacedGlyph], float, float]:
     line_box = font.line_height * scale
     line_advance = line_box * line_spacing
 
@@ -155,16 +155,16 @@ def _shape_horizontal(
 
     placed: list[PlacedGlyph] = []
     for i, line in enumerate(lines):
-        baseline = padding + font.ascent * scale + i * line_advance
-        x = padding + _aligned_offset(line_widths[i], max_width, align)
+        baseline = font.ascent * scale + i * line_advance
+        x = _aligned_offset(line_widths[i], max_width, align)
         for cluster, glyph_name in line:
             transform = Transform(scale, 0, 0, -scale, x, baseline)
             placed.append(PlacedGlyph(glyph_name, cluster, transform))
             x += font.advance_width(glyph_name) * scale + letter_spacing
 
-    width = int(round(max_width + 2 * padding))
-    height = int(round(line_box + line_advance * (len(lines) - 1) + 2 * padding))
-    return ShapedText(tuple(placed), width, height, "horizontal")
+    advance_width = max_width
+    advance_height = line_box + line_advance * (len(lines) - 1)
+    return placed, advance_width, advance_height
 
 
 @dataclass(frozen=True)
@@ -243,7 +243,8 @@ def _place_cell(
         squeeze = min(1.0, font.units_per_em * scale / natural) if natural else 1.0
         sx = scale * squeeze
         x = center_x - sum(advances) * sx / 2.0
-        baseline = top_y + cell.advance / 2.0 + (font.ascent * 0.35) * scale
+        # Center the digits' cap box vertically within the em cell.
+        baseline = top_y + cell.advance / 2.0 + (font.cap_height / 2.0) * scale
         for cluster, glyph_name in cell.items:
             placed.append(
                 PlacedGlyph(glyph_name, cluster, Transform(sx, 0, 0, -scale, x, baseline))
@@ -259,10 +260,9 @@ def _shape_vertical(
     align: Align,
     line_spacing: float,
     letter_spacing: float,
-    padding: float,
     orientation: Orientation,
     tate_chu_yoko: int,
-) -> ShapedText:
+) -> tuple[list[PlacedGlyph], float, float]:
     column_width = font.units_per_em * scale * line_spacing
     v_center = (font.ascent + font.descent) / 2.0
 
@@ -282,17 +282,73 @@ def _shape_vertical(
     placed: list[PlacedGlyph] = []
     for j, cells in enumerate(columns_cells):
         # First column is visually rightmost.
-        center_x = padding + (n_cols - 1 - j) * column_width + column_width / 2.0
-        y = padding + _aligned_offset(column_heights[j], max_height, align)
+        center_x = (n_cols - 1 - j) * column_width + column_width / 2.0
+        y = _aligned_offset(column_heights[j], max_height, align)
         for cell in cells:
             _place_cell(
                 placed, font, cell, center_x=center_x, top_y=y, scale=scale, v_center=v_center
             )
             y += cell.advance + letter_spacing
 
-    width = int(round(n_cols * column_width + 2 * padding))
-    height = int(round(max_height + 2 * padding))
-    return ShapedText(tuple(placed), width, height, "vertical")
+    return placed, n_cols * column_width, max_height
+
+
+def _shift(transform: Transform, dx: float, dy: float) -> Transform:
+    """Translate a device-space affine by ``(dx, dy)`` in the output plane."""
+    return Transform(transform[0], transform[1], transform[2], transform[3],
+                     transform[4] + dx, transform[5] + dy)
+
+
+def _ink_bounds(font: "IVSFont", placed: list[PlacedGlyph]):
+    """Device-space bounding box of all glyph ink, or ``None`` if there is none.
+
+    Uses control-point bounds (a cheap superset of the true outline bounds),
+    which is exactly what is needed to guarantee nothing is clipped.
+    """
+    glyph_set = font.glyph_set
+    min_x = min_y = float("inf")
+    max_x = max_y = float("-inf")
+    for pg in placed:
+        pen = ControlBoundsPen(glyph_set)
+        glyph_set[pg.glyph_name].draw(pen)
+        if pen.bounds is None:
+            continue
+        x0, y0, x1, y1 = pen.bounds
+        for corner in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+            dx, dy = pg.transform.transformPoint(corner)
+            min_x, max_x = min(min_x, dx), max(max_x, dx)
+            min_y, max_y = min(min_y, dy), max(max_y, dy)
+    if min_x == float("inf"):
+        return None
+    return min_x, min_y, max_x, max_y
+
+
+def _finalize(
+    font: "IVSFont",
+    placed: list[PlacedGlyph],
+    advance_width: float,
+    advance_height: float,
+    *,
+    padding: float,
+    direction: Direction,
+) -> ShapedText:
+    """Size the canvas to cover both the advance box and any ink overhang,
+    then shift the glyphs so the content sits at ``padding`` from the edges."""
+    x0, y0 = 0.0, 0.0
+    x1, y1 = advance_width, advance_height
+    ink = _ink_bounds(font, placed)
+    if ink is not None:
+        x0, y0 = min(x0, ink[0]), min(y0, ink[1])
+        x1, y1 = max(x1, ink[2]), max(y1, ink[3])
+
+    shift_x, shift_y = padding - x0, padding - y0
+    shifted = tuple(
+        PlacedGlyph(pg.glyph_name, pg.cluster, _shift(pg.transform, shift_x, shift_y))
+        for pg in placed
+    )
+    width = int(round(x1 - x0 + 2 * padding))
+    height = int(round(y1 - y0 + 2 * padding))
+    return ShapedText(shifted, width, height, direction)
 
 
 def shape(
@@ -333,6 +389,15 @@ def shape(
     Returns:
         A :class:`ShapedText`.
     """
+    if direction not in ("horizontal", "vertical"):
+        raise ValueError("direction must be 'horizontal' or 'vertical'")
+    if align not in ("start", "center", "end"):
+        raise ValueError("align must be 'start', 'center' or 'end'")
+    if orientation not in ("mixed", "upright"):
+        raise ValueError("orientation must be 'mixed' or 'upright'")
+    if tate_chu_yoko < 0:
+        raise ValueError("tate_chu_yoko must be >= 0")
+
     scale = size / font.units_per_em
     substitute = VERTICAL_FORMS if direction == "vertical" else None
 
@@ -344,23 +409,38 @@ def shape(
     if direction == "vertical":
         if not font.has_vertical_metrics:
             raise ValueError("font has no vertical metrics (vmtx); cannot set vertical")
-        return _shape_vertical(
+        placed, adv_w, adv_h = _shape_vertical(
             font,
             runs,
             scale=scale,
             align=align,
             line_spacing=line_spacing,
             letter_spacing=letter_spacing,
-            padding=padding,
             orientation=orientation,
             tate_chu_yoko=tate_chu_yoko,
         )
-    return _shape_horizontal(
-        font,
-        runs,
-        scale=scale,
-        align=align,
-        line_spacing=line_spacing,
-        letter_spacing=letter_spacing,
-        padding=padding,
+    else:
+        placed, adv_w, adv_h = _shape_horizontal(
+            font,
+            runs,
+            scale=scale,
+            align=align,
+            line_spacing=line_spacing,
+            letter_spacing=letter_spacing,
+        )
+
+    return _finalize(
+        font, placed, adv_w, adv_h, padding=padding, direction=direction
     )
+
+
+def shape_for_output(
+    font: "IVSFont", text: str, *, stroke_width: float = 0.0, padding: float = 0.0, **layout
+) -> ShapedText:
+    """Shape ``text`` for a renderer, widening the padding to fit the stroke.
+
+    Shared preamble for :func:`mojivs.render.render`,
+    :func:`mojivs.export.to_svg` and :func:`mojivs.export.to_pdf` so the
+    stroke-padding rule lives in one place.
+    """
+    return shape(font, text, padding=padding + stroke_width / 2.0, **layout)

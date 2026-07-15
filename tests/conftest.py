@@ -9,7 +9,12 @@ GOTHIC = FONT_DIR / "HaranoAjiGothic-Medium.otf"
 
 
 @pytest.fixture(scope="session")
-def font() -> IVSFont:
+def font_path() -> Path:
     if not GOTHIC.exists():
         pytest.skip(f"sample font not found: {GOTHIC}")
-    return IVSFont(GOTHIC)
+    return GOTHIC
+
+
+@pytest.fixture(scope="session")
+def font(font_path) -> IVSFont:
+    return IVSFont(font_path)
