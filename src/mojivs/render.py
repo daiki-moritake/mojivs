@@ -16,11 +16,12 @@ from typing import TYPE_CHECKING
 
 import cairo
 import numpy as np
+from fontTools.misc.transform import Transform
 from fontTools.pens.basePen import BasePen
 from PIL import Image
 
-from .colors import Color, RGBA, to_rgba
-from .shaping import Align, Direction, PlacedGlyph, shape
+from .colors import RGBA, Color, to_rgba
+from .shaping import Align, Direction, Orientation, PlacedGlyph, shape_for_output
 
 if TYPE_CHECKING:
     from .font import IVSFont
@@ -29,32 +30,26 @@ if TYPE_CHECKING:
 class _CairoPen(BasePen):
     """Draws a glyph outline into a cairo context in device space.
 
-    Font-unit points ``(x, y)`` (y-up) are mapped to device pixels
-    ``(ox + x*sx, oy - y*sy)`` (y-down), so the caller controls position and
-    scale while stroke widths stay in device pixels.
+    Font-unit points (y-up) are mapped to device pixels (y-down) by the placed
+    glyph's affine ``transform``, so position, scale and rotation are all handled
+    while stroke widths stay in device pixels.
     """
 
-    def __init__(self, glyph_set, ctx, sx, sy, ox, oy):
+    def __init__(self, glyph_set, ctx, transform):
         super().__init__(glyph_set)
         self._ctx = ctx
-        self._sx = sx
-        self._sy = sy
-        self._ox = ox
-        self._oy = oy
-
-    def _pt(self, pt):
-        return (self._ox + pt[0] * self._sx, self._oy - pt[1] * self._sy)
+        self._t = transform
 
     def _moveTo(self, pt):
-        self._ctx.move_to(*self._pt(pt))
+        self._ctx.move_to(*self._t.transformPoint(pt))
 
     def _lineTo(self, pt):
-        self._ctx.line_to(*self._pt(pt))
+        self._ctx.line_to(*self._t.transformPoint(pt))
 
     def _curveToOne(self, pt1, pt2, pt3):
-        x1, y1 = self._pt(pt1)
-        x2, y2 = self._pt(pt2)
-        x3, y3 = self._pt(pt3)
+        x1, y1 = self._t.transformPoint(pt1)
+        x2, y2 = self._t.transformPoint(pt2)
+        x3, y3 = self._t.transformPoint(pt3)
         self._ctx.curve_to(x1, y1, x2, y2, x3, y3)
 
     def _closePath(self):
@@ -90,7 +85,7 @@ def _surface_to_image(surface: cairo.ImageSurface) -> Image.Image:
 
 
 def _rasterize(
-    font: "IVSFont",
+    font: IVSFont,
     glyphs,
     width: int,
     height: int,
@@ -110,7 +105,7 @@ def _rasterize(
 
     glyph_set = font.glyph_set
     for pg in glyphs:
-        pen = _CairoPen(glyph_set, ctx, pg.x_scale, pg.y_scale, pg.x, pg.y)
+        pen = _CairoPen(glyph_set, ctx, pg.transform)
         glyph_set[pg.glyph_name].draw(pen)
 
         if stroke_width > 0 and stroke[3] > 0:
@@ -126,7 +121,7 @@ def _rasterize(
 
 
 def render(
-    font: "IVSFont",
+    font: IVSFont,
     text: str,
     *,
     size: int = 64,
@@ -135,6 +130,8 @@ def render(
     line_spacing: float = 1.0,
     letter_spacing: float = 0.0,
     padding: int = 0,
+    orientation: Orientation = "mixed",
+    tate_chu_yoko: int = 0,
     color: Color = "#000000",
     stroke: Color = None,
     stroke_width: float = 0.0,
@@ -151,6 +148,10 @@ def render(
         direction: ``"horizontal"`` or ``"vertical"``.
         align: Cross-axis alignment of shorter lines/columns.
         line_spacing: Multiplier applied to the line/column advance.
+        orientation: Vertical only. ``"mixed"`` rotates Latin/digits 90°;
+            ``"upright"`` keeps every glyph upright.
+        tate_chu_yoko: Vertical only. Set short ASCII digit runs upright and
+            horizontal (縦中横); ``0`` disables it.
         color: Fill color (hex string or 0–255 RGB/RGBA tuple).
         stroke: Outline color. If ``None``, no outline is drawn.
         stroke_width: Outline width in pixels.
@@ -162,16 +163,18 @@ def render(
     Returns:
         A :class:`PIL.Image.Image` in ``RGBA`` mode.
     """
-    pad = padding + stroke_width / 2.0
-    shaped = shape(
+    shaped = shape_for_output(
         font,
         text,
+        stroke_width=stroke_width,
+        padding=padding,
         size=size,
         direction=direction,
         align=align,
         line_spacing=line_spacing,
         letter_spacing=letter_spacing,
-        padding=pad,
+        orientation=orientation,
+        tate_chu_yoko=tate_chu_yoko,
         on_missing=on_missing,
     )
     return _rasterize(
@@ -187,7 +190,7 @@ def render(
 
 
 def render_to_box(
-    font: "IVSFont",
+    font: IVSFont,
     text: str,
     box: tuple[int, int],
     *,
@@ -202,7 +205,15 @@ def render_to_box(
     The line height is scaled to ``height``. If the text is wider than ``width``
     it is compressed horizontally; if narrower, the characters are spread evenly
     (justified) to fill the width. The returned image is exactly ``box`` pixels.
+
+    This is a horizontal single-line helper only. For vertical writing or
+    multiple lines, use :func:`render` (which sizes the canvas to the content).
     """
+    if "\n" in text:
+        raise ValueError(
+            "render_to_box renders a single line; newlines are not supported. "
+            "Use render() for multi-line or vertical text."
+        )
     box_w, box_h = box
     run = font.resolve_run(text, on_missing=on_missing)
 
@@ -227,7 +238,8 @@ def render_to_box(
 
     placed: list[PlacedGlyph] = []
     for cluster, glyph_name in run:
-        placed.append(PlacedGlyph(glyph_name, cluster, x, baseline, scale_x, scale_y))
+        transform = Transform(scale_x, 0, 0, -scale_y, x, baseline)
+        placed.append(PlacedGlyph(glyph_name, cluster, transform))
         x += font.advance_width(glyph_name) * scale_x + extra_spacing
 
     return _rasterize(

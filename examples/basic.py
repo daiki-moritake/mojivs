@@ -40,10 +40,13 @@ def main() -> None:
     ).save(OUT / "multiline.png")
 
     # 4. Vertical writing (columns run right-to-left; punctuation is substituted).
+    #    orientation="mixed" (default) rotates Latin/digits 90°; tate_chu_yoko
+    #    sets short digit runs upright and horizontal (縦中横).
     font.render(
-        "辻\U000e0100鯛の\n「縦書き」。",
+        "辻\U000e0100鯛の\n「縦書き」ABC\n平成31年5月",
         size=72,
         direction="vertical",
+        tate_chu_yoko=2,
         color="#111",
     ).save(OUT / "vertical.png")
 

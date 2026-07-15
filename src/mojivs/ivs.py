@@ -12,8 +12,8 @@ this module itself imports nothing beyond the standard library.
 from __future__ import annotations
 
 import functools
+from collections.abc import Iterator
 from importlib import resources
-from typing import Iterator
 
 # Range of Unicode variation selectors used by the IVD (VS17–VS256).
 # Standardized selectors (U+FE00–FE0F) are intentionally excluded because the

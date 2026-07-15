@@ -1,13 +1,14 @@
 """Tests for IVSFont glyph resolution and support queries."""
 
 import pytest
+from fontTools.ttLib import TTFont
 
-from mojivs import UnsupportedCharacterError
+from mojivs import IVSFont, MojivsError, UnsupportedCharacterError
 
 TSUJI = "辻"
 VS17 = "\U000e0100"
 VS18 = "\U000e0101"
-PUA = "\uE000"  # Private Use Area: no glyph in a normal font.
+PUA = "\ue000"  # Private Use Area: no glyph in a normal font.
 
 
 def test_supports_plain_char(font):
@@ -44,3 +45,10 @@ def test_resolve_run_raises_on_missing(font):
     with pytest.raises(UnsupportedCharacterError) as exc:
         font.resolve_run(PUA, on_missing="raise")
     assert exc.value.characters == [PUA]
+
+
+def test_missing_unicode_cmap_raises(font_path, monkeypatch):
+    tt = TTFont(str(font_path), lazy=True)
+    monkeypatch.setattr(tt, "getBestCmap", lambda: None)
+    with pytest.raises(MojivsError):
+        IVSFont(tt)
