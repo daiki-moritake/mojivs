@@ -26,9 +26,9 @@ from .export import to_pdf, to_svg
 from .font import IVSFont
 from .ivs import is_variation_selector, iter_clusters
 from .render import render, render_to_box
-from .shaping import PlacedGlyph, ShapedText, shape
+from .shaping import PlacedGlyph, ShapedText, is_upright_in_vertical, shape
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "IVSFont",
@@ -39,6 +39,7 @@ __all__ = [
     "to_pdf",
     "ShapedText",
     "PlacedGlyph",
+    "is_upright_in_vertical",
     "is_variation_selector",
     "iter_clusters",
     "MojivsError",

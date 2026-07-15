@@ -47,3 +47,53 @@ def test_vertical_requires_vertical_metrics(font, monkeypatch):
     monkeypatch.setattr(font, "_vmtx", None)
     with pytest.raises(ValueError):
         font.shape("あ", direction="vertical")
+
+
+def test_is_upright_in_vertical():
+    from mojivs.shaping import is_upright_in_vertical
+
+    assert is_upright_in_vertical("あ")
+    assert is_upright_in_vertical("辻")
+    assert is_upright_in_vertical("、")
+    assert not is_upright_in_vertical("A")
+    assert not is_upright_in_vertical("1")
+
+
+def _is_rotated(pg):
+    # Upright glyphs are a pure scale (xx != 0); rotated glyphs swap axes (xx == 0).
+    return pg.transform[0] == 0 and pg.transform[1] != 0
+
+
+def test_vertical_mixed_rotates_latin_only(font):
+    shaped = font.shape("Aあ", size=64, direction="vertical")  # mixed by default
+    assert _is_rotated(shaped.glyphs[0])  # A rotated
+    assert not _is_rotated(shaped.glyphs[1])  # あ upright
+
+
+def test_vertical_upright_orientation_keeps_latin_upright(font):
+    shaped = font.shape("Aあ", size=64, direction="vertical", orientation="upright")
+    assert not _is_rotated(shaped.glyphs[0])
+    assert not _is_rotated(shaped.glyphs[1])
+
+
+def test_tate_chu_yoko_groups_digits_into_one_cell(font):
+    # Without TCY the two digits are separate (rotated) cells stacked vertically.
+    plain = font.shape("25", size=64, direction="vertical")
+    assert plain.glyphs[0].y != plain.glyphs[1].y
+
+    # With TCY they share one cell: same baseline (y), side by side (different x).
+    tcy = font.shape("25", size=64, direction="vertical", tate_chu_yoko=2)
+    assert len(tcy.glyphs) == 2
+    assert tcy.glyphs[0].y == tcy.glyphs[1].y
+    assert tcy.glyphs[0].x != tcy.glyphs[1].x
+    assert not _is_rotated(tcy.glyphs[0])  # upright
+    assert tcy.height < plain.height
+
+
+def test_tate_chu_yoko_chunks_long_runs(font):
+    # A 4-digit run with limit 2 is chunked into two upright cells ("20", "24").
+    shaped = font.shape("2024", size=64, direction="vertical", tate_chu_yoko=2)
+    assert len(shaped.glyphs) == 4
+    assert not any(_is_rotated(g) for g in shaped.glyphs)
+    baselines = {round(g.y, 3) for g in shaped.glyphs}
+    assert len(baselines) == 2  # two cells, two baselines

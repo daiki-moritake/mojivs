@@ -61,3 +61,12 @@ def test_render_vertical(font):
     # A single vertical column is much taller than it is wide.
     assert img.height > img.width
     assert img.getchannel("A").getbbox() is not None
+
+
+def test_render_vertical_mixed_and_tcy(font):
+    # Rotated Latin and tate-chu-yoko digits should both rasterize without error.
+    rotated = font.render("縦ABC\n令和6年", size=48, direction="vertical")
+    tcy = font.render("平成31年", size=48, direction="vertical", tate_chu_yoko=2)
+    for img in (rotated, tcy):
+        assert img.mode == "RGBA"
+        assert img.getchannel("A").getbbox() is not None

@@ -18,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from fontTools.misc.transform import Transform
+
 from . import ivs
 
 if TYPE_CHECKING:
@@ -25,6 +27,32 @@ if TYPE_CHECKING:
 
 Direction = Literal["horizontal", "vertical"]
 Align = Literal["start", "center", "end"]
+Orientation = Literal["mixed", "upright"]
+
+# Unicode ranges kept upright in vertical text (roughly Unicode UAX #50 "U").
+# Everything outside these ranges (Latin, digits, Greek, Cyrillic, half-width
+# forms, …) is rotated 90° clockwise when ``orientation="mixed"``.
+_UPRIGHT_RANGES = (
+    (0x3000, 0x303F),  # CJK Symbols and Punctuation
+    (0x3040, 0x30FF),  # Hiragana + Katakana
+    (0x3105, 0x312F),  # Bopomofo
+    (0x3190, 0x319F),  # Kanbun
+    (0x31F0, 0x31FF),  # Katakana Phonetic Extensions
+    (0x3300, 0x9FFF),  # CJK Compatibility, Ext A, Unified Ideographs
+    (0xF900, 0xFAFF),  # CJK Compatibility Ideographs
+    (0xFE10, 0xFE1F),  # Vertical Forms
+    (0xFE30, 0xFE4F),  # CJK Compatibility Forms
+    (0xFF00, 0xFF60),  # Fullwidth Forms (fullwidth ASCII)
+    (0xFFE0, 0xFFE6),  # Fullwidth signs
+    (0x1B000, 0x1B16F),  # Kana Supplement / Extended
+    (0x20000, 0x3FFFF),  # CJK Extension B and beyond
+)
+
+
+def is_upright_in_vertical(char: str) -> bool:
+    """Whether ``char`` stays upright (vs. rotated) in vertical text."""
+    cp = ord(char)
+    return any(lo <= cp <= hi for lo, hi in _UPRIGHT_RANGES)
 
 #: Characters that take a dedicated glyph when set vertically.
 VERTICAL_FORMS = {
@@ -63,17 +91,25 @@ VERTICAL_FORMS = {
 class PlacedGlyph:
     """A single glyph positioned in pixel space.
 
-    The mapping from a font-unit point ``(fx, fy)`` (y-up) to a device pixel is
-    ``(x + fx * x_scale, y - fy * y_scale)`` — i.e. ``(x, y)`` is the glyph
-    origin on the baseline and the scales flip/​size the outline.
+    ``transform`` is an affine mapping font-unit points ``(fx, fy)`` (y-up) to
+    device pixels (y-down); apply it with ``transform.transformPoint((fx, fy))``.
+    For upright glyphs it is a scale-and-flip; rotated glyphs (Latin in vertical
+    text) carry a 90° rotation as well.
     """
 
     glyph_name: str
     cluster: str
-    x: float
-    y: float
-    x_scale: float
-    y_scale: float
+    transform: Transform
+
+    @property
+    def x(self) -> float:
+        """Device x of the glyph origin (the transform's x translation)."""
+        return self.transform[4]
+
+    @property
+    def y(self) -> float:
+        """Device y of the glyph origin (the transform's y translation)."""
+        return self.transform[5]
 
 
 @dataclass(frozen=True)
@@ -122,12 +158,97 @@ def _shape_horizontal(
         baseline = padding + font.ascent * scale + i * line_advance
         x = padding + _aligned_offset(line_widths[i], max_width, align)
         for cluster, glyph_name in line:
-            placed.append(PlacedGlyph(glyph_name, cluster, x, baseline, scale, scale))
+            transform = Transform(scale, 0, 0, -scale, x, baseline)
+            placed.append(PlacedGlyph(glyph_name, cluster, transform))
             x += font.advance_width(glyph_name) * scale + letter_spacing
 
     width = int(round(max_width + 2 * padding))
     height = int(round(line_box + line_advance * (len(lines) - 1) + 2 * padding))
     return ShapedText(tuple(placed), width, height, "horizontal")
+
+
+@dataclass(frozen=True)
+class _VCell:
+    """One vertical layout slot: an upright glyph, a rotated glyph, or a
+    tate-chu-yoko run of digits set upright and horizontal in a single cell."""
+
+    mode: Literal["upright", "rotate", "tcy"]
+    items: list[tuple[str, str]]
+    advance: float  # advance down the column, in pixels
+
+
+def _is_ascii_digit(cluster: str) -> bool:
+    return len(cluster) == 1 and cluster in "0123456789"
+
+
+def _vertical_cells(
+    font: "IVSFont",
+    column: list[tuple[str, str]],
+    *,
+    scale: float,
+    orientation: Orientation,
+    tate_chu_yoko: int,
+) -> list[_VCell]:
+    em_px = font.units_per_em * scale
+    cells: list[_VCell] = []
+    i, n = 0, len(column)
+    while i < n:
+        cluster, glyph_name = column[i]
+
+        # Tate-chu-yoko: consecutive digits are chunked into groups of at most
+        # `tate_chu_yoko`, each set upright and horizontal inside one em cell.
+        if tate_chu_yoko and _is_ascii_digit(cluster):
+            j = i
+            while j < n and _is_ascii_digit(column[j][0]) and (j - i) < tate_chu_yoko:
+                j += 1
+            cells.append(_VCell("tcy", column[i:j], em_px))
+            i = j
+            continue
+
+        if orientation == "mixed" and not is_upright_in_vertical(cluster[0]):
+            advance = font.advance_width(glyph_name) * scale
+            cells.append(_VCell("rotate", [column[i]], advance))
+        else:
+            advance = font.advance_height(glyph_name) * scale
+            cells.append(_VCell("upright", [column[i]], advance))
+        i += 1
+    return cells
+
+
+def _place_cell(
+    placed: list[PlacedGlyph],
+    font: "IVSFont",
+    cell: _VCell,
+    *,
+    center_x: float,
+    top_y: float,
+    scale: float,
+    v_center: float,
+) -> None:
+    if cell.mode == "upright":
+        cluster, glyph_name = cell.items[0]
+        origin_x = center_x - (font.advance_width(glyph_name) / 2.0) * scale
+        origin_y = top_y + font.vertical_origin(glyph_name) * scale
+        placed.append(
+            PlacedGlyph(glyph_name, cluster, Transform(scale, 0, 0, -scale, origin_x, origin_y))
+        )
+    elif cell.mode == "rotate":
+        cluster, glyph_name = cell.items[0]
+        # 90° clockwise: font +x advances down, font +y points right.
+        transform = Transform(0, scale, scale, 0, center_x - v_center * scale, top_y)
+        placed.append(PlacedGlyph(glyph_name, cluster, transform))
+    else:  # tate-chu-yoko: upright digits laid horizontally, squeezed to one em
+        advances = [font.advance_width(g) for _, g in cell.items]
+        natural = sum(advances) * scale
+        squeeze = min(1.0, font.units_per_em * scale / natural) if natural else 1.0
+        sx = scale * squeeze
+        x = center_x - sum(advances) * sx / 2.0
+        baseline = top_y + cell.advance / 2.0 + (font.ascent * 0.35) * scale
+        for cluster, glyph_name in cell.items:
+            placed.append(
+                PlacedGlyph(glyph_name, cluster, Transform(sx, 0, 0, -scale, x, baseline))
+            )
+            x += font.advance_width(glyph_name) * sx
 
 
 def _shape_vertical(
@@ -139,30 +260,35 @@ def _shape_vertical(
     line_spacing: float,
     letter_spacing: float,
     padding: float,
+    orientation: Orientation,
+    tate_chu_yoko: int,
 ) -> ShapedText:
     column_width = font.units_per_em * scale * line_spacing
+    v_center = (font.ascent + font.descent) / 2.0
 
-    column_heights = [
-        sum(font.advance_height(g) * scale for _, g in col)
-        + letter_spacing * max(len(col) - 1, 0)
+    columns_cells = [
+        _vertical_cells(
+            font, col, scale=scale, orientation=orientation, tate_chu_yoko=tate_chu_yoko
+        )
         for col in columns
     ]
+    column_heights = [
+        sum(c.advance for c in cells) + letter_spacing * max(len(cells) - 1, 0)
+        for cells in columns_cells
+    ]
     max_height = max(column_heights, default=0.0)
-    n_cols = len(columns)
+    n_cols = len(columns_cells)
 
     placed: list[PlacedGlyph] = []
-    for j, col in enumerate(columns):
+    for j, cells in enumerate(columns_cells):
         # First column is visually rightmost.
         center_x = padding + (n_cols - 1 - j) * column_width + column_width / 2.0
         y = padding + _aligned_offset(column_heights[j], max_height, align)
-        for cluster, glyph_name in col:
-            advance_h = font.advance_height(glyph_name) * scale
-            origin_x = center_x - (font.advance_width(glyph_name) / 2.0) * scale
-            origin_y = y + font.vertical_origin(glyph_name) * scale
-            placed.append(
-                PlacedGlyph(glyph_name, cluster, origin_x, origin_y, scale, scale)
+        for cell in cells:
+            _place_cell(
+                placed, font, cell, center_x=center_x, top_y=y, scale=scale, v_center=v_center
             )
-            y += advance_h + letter_spacing
+            y += cell.advance + letter_spacing
 
     width = int(round(n_cols * column_width + 2 * padding))
     height = int(round(max_height + 2 * padding))
@@ -179,6 +305,8 @@ def shape(
     line_spacing: float = 1.0,
     letter_spacing: float = 0.0,
     padding: float = 0.0,
+    orientation: Orientation = "mixed",
+    tate_chu_yoko: int = 0,
     on_missing: str = "raise",
 ) -> ShapedText:
     """Lay out ``text`` into positioned glyphs.
@@ -194,6 +322,12 @@ def shape(
         line_spacing: Multiplier applied to the line/column advance.
         letter_spacing: Extra space between glyphs, in pixels.
         padding: Transparent padding around the text, in pixels.
+        orientation: Vertical only. ``"mixed"`` (default) rotates non-CJK
+            characters (Latin, digits, …) 90° clockwise; ``"upright"`` keeps
+            every glyph upright.
+        tate_chu_yoko: Vertical only. When > 0, maximal runs of ASCII digits of
+            at most this length are set upright and horizontal in a single cell
+            (縦中横). ``0`` disables it.
         on_missing: ``"raise"`` (default) or ``"skip"`` for unsupported clusters.
 
     Returns:
@@ -218,6 +352,8 @@ def shape(
             line_spacing=line_spacing,
             letter_spacing=letter_spacing,
             padding=padding,
+            orientation=orientation,
+            tate_chu_yoko=tate_chu_yoko,
         )
     return _shape_horizontal(
         font,
