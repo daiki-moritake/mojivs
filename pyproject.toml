@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mojivs"
-version = "0.2.0"
+version = "0.3.0"
 description = "IVS-aware Japanese text rendering — render 異体字 (variation sequences) to images."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -29,7 +29,7 @@ dependencies = [
 
 [project.optional-dependencies]
 pdf = ["reportlab>=4.0"]
-dev = ["pytest>=7.0", "reportlab>=4.0"]
+dev = ["pytest>=7.0", "reportlab>=4.0", "ruff>=0.6", "pyright>=1.1.380"]
 
 [project.urls]
 Homepage = "https://github.com/daiki-moritake/mojivs"
@@ -44,3 +44,23 @@ include = ["src/mojivs", "tests", "examples", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+# pyflakes (F) catches real bugs (unused/undefined names); pycodestyle (E/W),
+# isort (I), pyupgrade (UP) and bugbear (B) keep the code consistent.
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.pyright]
+# The runtime dependencies (pycairo, reportlab) and parts of fontTools ship no
+# type stubs. "basic" mode keeps useful checks (undefined names, bad calls)
+# without flooding the editor with "stub not found" / "unknown type" noise.
+include = ["src", "tests"]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.9"
+typeCheckingMode = "basic"
+reportMissingTypeStubs = false

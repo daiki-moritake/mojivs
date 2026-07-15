@@ -4,7 +4,7 @@ import pytest
 
 from mojivs import UnsupportedCharacterError
 
-PUA = "\uE000"  # Private Use Area character with no glyph.
+PUA = "\ue000"  # Private Use Area character with no glyph.
 
 
 def test_render_returns_rgba_image(font):
@@ -31,6 +31,22 @@ def test_render_size_scales_height(font):
 def test_render_to_box_exact_size(font):
     img = font.render_to_box("辻鯛テ体", (300, 40))
     assert img.size == (300, 40)
+
+
+def test_render_to_box_rejects_newline(font):
+    with pytest.raises(ValueError):
+        font.render_to_box("a\nb", (100, 40))
+
+
+def test_render_does_not_clip_overhanging_ink(font):
+    # 'f' overhangs its advance width; the canvas must grow to fit its ink so
+    # padding=0 does not clip it. Its inked size must match a padded render
+    # within anti-aliasing tolerance (a real clip would remove several pixels).
+    tight = font.render("f", size=200, padding=0).getchannel("A").getbbox()
+    padded = font.render("f", size=200, padding=10).getchannel("A").getbbox()
+    assert tight is not None and padded is not None
+    assert abs((tight[2] - tight[0]) - (padded[2] - padded[0])) <= 1  # ink width
+    assert abs((tight[3] - tight[1]) - (padded[3] - padded[1])) <= 1  # ink height
 
 
 def test_render_raises_on_unsupported(font):
@@ -61,3 +77,12 @@ def test_render_vertical(font):
     # A single vertical column is much taller than it is wide.
     assert img.height > img.width
     assert img.getchannel("A").getbbox() is not None
+
+
+def test_render_vertical_mixed_and_tcy(font):
+    # Rotated Latin and tate-chu-yoko digits should both rasterize without error.
+    rotated = font.render("縦ABC\n令和6年", size=48, direction="vertical")
+    tcy = font.render("平成31年", size=48, direction="vertical", tate_chu_yoko=2)
+    for img in (rotated, tcy):
+        assert img.mode == "RGBA"
+        assert img.getchannel("A").getbbox() is not None
