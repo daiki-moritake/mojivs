@@ -26,6 +26,15 @@ def test_to_svg_vertical(font):
     assert svg.startswith("<svg") and "<path" in svg
 
 
+def test_to_svg_vertical_mixed_uses_matrix(font):
+    import xml.etree.ElementTree as ET
+
+    svg = font.to_svg("A令和", size=48, direction="vertical", tate_chu_yoko=2)
+    root = ET.fromstring(svg)  # must stay well-formed with affine transforms
+    ns = "{http://www.w3.org/2000/svg}"
+    assert all(p.get("transform", "").startswith("matrix(") for p in root.iter(f"{ns}path"))
+
+
 def test_to_pdf_writes_file(font, tmp_path):
     reportlab = pytest.importorskip("reportlab")
     out = tmp_path / "out.pdf"

@@ -14,7 +14,7 @@ from fontTools.pens.basePen import BasePen
 from fontTools.pens.svgPathPen import SVGPathPen
 
 from .colors import Color, to_hex
-from .shaping import Align, Direction, ShapedText, shape
+from .shaping import Align, Direction, Orientation, ShapedText, shape
 
 if TYPE_CHECKING:
     from .font import IVSFont
@@ -70,10 +70,7 @@ def _svg_from_shaped(
         d = pen.getCommands()
         if not d:
             continue
-        transform = (
-            f"translate({_num(pg.x)},{_num(pg.y)}) "
-            f"scale({_num(pg.x_scale)},{_num(-pg.y_scale)})"
-        )
+        transform = f"matrix({','.join(_num(v) for v in pg.transform)})"
         title = quoteattr(pg.cluster)
         parts.append(
             f'<path transform="{transform}" {paint} d="{d}"><title>{title[1:-1]}'
@@ -94,6 +91,8 @@ def to_svg(
     line_spacing: float = 1.0,
     letter_spacing: float = 0.0,
     padding: int = 0,
+    orientation: Orientation = "mixed",
+    tate_chu_yoko: int = 0,
     color: Color = "#000000",
     stroke: Color = None,
     stroke_width: float = 0.0,
@@ -114,6 +113,8 @@ def to_svg(
         line_spacing=line_spacing,
         letter_spacing=letter_spacing,
         padding=pad,
+        orientation=orientation,
+        tate_chu_yoko=tate_chu_yoko,
         on_missing=on_missing,
     )
     return _svg_from_shaped(
@@ -127,18 +128,21 @@ def to_svg(
 
 
 class _ReportlabPen(BasePen):
-    """Draws a glyph outline into a reportlab path in PDF (y-up) coordinates."""
+    """Draws a glyph outline into a reportlab path in PDF (y-up) coordinates.
 
-    def __init__(self, glyph_set, path, sx, sy, ox, oy):
+    The placed glyph's affine yields device (y-down) pixels, which are flipped
+    against the page ``height`` to reach PDF's bottom-up coordinate system.
+    """
+
+    def __init__(self, glyph_set, path, transform, height):
         super().__init__(glyph_set)
         self._path = path
-        self._sx = sx
-        self._sy = sy
-        self._ox = ox
-        self._oy = oy
+        self._t = transform
+        self._h = height
 
     def _pt(self, pt):
-        return (self._ox + pt[0] * self._sx, self._oy + pt[1] * self._sy)
+        dx, dy = self._t.transformPoint(pt)
+        return (dx, self._h - dy)
 
     def _moveTo(self, pt):
         self._path.moveTo(*self._pt(pt))
@@ -167,6 +171,8 @@ def to_pdf(
     line_spacing: float = 1.0,
     letter_spacing: float = 0.0,
     padding: int = 0,
+    orientation: Orientation = "mixed",
+    tate_chu_yoko: int = 0,
     color: Color = "#000000",
     stroke: Color = None,
     stroke_width: float = 0.0,
@@ -196,6 +202,8 @@ def to_pdf(
         line_spacing=line_spacing,
         letter_spacing=letter_spacing,
         padding=pad,
+        orientation=orientation,
+        tate_chu_yoko=tate_chu_yoko,
         on_missing=on_missing,
     )
 
@@ -224,9 +232,7 @@ def to_pdf(
     for pg in shaped.glyphs:
         # Convert top-down device y to PDF's bottom-up page coordinates.
         p = c.beginPath()
-        pen = _ReportlabPen(
-            glyph_set, p, pg.x_scale, pg.y_scale, pg.x, shaped.height - pg.y
-        )
+        pen = _ReportlabPen(glyph_set, p, pg.transform, shaped.height)
         glyph_set[pg.glyph_name].draw(pen)
         c.drawPath(p, fill=1 if fill_a > 0 else 0, stroke=1 if do_stroke else 0)
 
