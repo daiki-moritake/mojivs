@@ -36,7 +36,7 @@ def test_to_svg_vertical_mixed_uses_matrix(font):
 
 
 def test_to_pdf_writes_file(font, tmp_path):
-    reportlab = pytest.importorskip("reportlab")
+    pytest.importorskip("reportlab")
     out = tmp_path / "out.pdf"
     font.to_pdf("辻鯛テ", out, size=64, color="#000", stroke="#f00", stroke_width=3)
     assert out.exists()

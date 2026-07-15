@@ -4,7 +4,7 @@ import pytest
 
 from mojivs import UnsupportedCharacterError
 
-PUA = "\uE000"  # Private Use Area character with no glyph.
+PUA = "\ue000"  # Private Use Area character with no glyph.
 
 
 def test_render_returns_rgba_image(font):

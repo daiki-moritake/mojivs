@@ -8,7 +8,7 @@ from mojivs import IVSFont, MojivsError, UnsupportedCharacterError
 TSUJI = "辻"
 VS17 = "\U000e0100"
 VS18 = "\U000e0101"
-PUA = "\uE000"  # Private Use Area: no glyph in a normal font.
+PUA = "\ue000"  # Private Use Area: no glyph in a normal font.
 
 
 def test_supports_plain_char(font):

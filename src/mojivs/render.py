@@ -20,7 +20,7 @@ from fontTools.misc.transform import Transform
 from fontTools.pens.basePen import BasePen
 from PIL import Image
 
-from .colors import Color, RGBA, to_rgba
+from .colors import RGBA, Color, to_rgba
 from .shaping import Align, Direction, Orientation, PlacedGlyph, shape_for_output
 
 if TYPE_CHECKING:
@@ -85,7 +85,7 @@ def _surface_to_image(surface: cairo.ImageSurface) -> Image.Image:
 
 
 def _rasterize(
-    font: "IVSFont",
+    font: IVSFont,
     glyphs,
     width: int,
     height: int,
@@ -121,7 +121,7 @@ def _rasterize(
 
 
 def render(
-    font: "IVSFont",
+    font: IVSFont,
     text: str,
     *,
     size: int = 64,
@@ -190,7 +190,7 @@ def render(
 
 
 def render_to_box(
-    font: "IVSFont",
+    font: IVSFont,
     text: str,
     box: tuple[int, int],
     *,

@@ -180,9 +180,18 @@ mojivs/
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest
-python examples/basic.py   # examples/ に PNG を出力
+
+pytest                       # テスト
+ruff check src tests         # lint（未使用importや実バグを検出）
+ruff format src tests        # 整形
+pyright                      # 型チェック
+
+python examples/basic.py     # examples/ に PNG を出力
 ```
+
+lint/型チェックの設定は `pyproject.toml` の `[tool.ruff]` / `[tool.pyright]` にあります。
+型スタブを持たない C 拡張（pycairo・reportlab）向けに pyright は `basic` モードで、
+「スタブが無い」系の誤検知を抑制しています。CI（GitHub Actions）でも同じ4つを実行します。
 
 ## 制限事項・今後
 

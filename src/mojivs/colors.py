@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Sequence, Union
+from collections.abc import Sequence
+from typing import Union
 
 Color = Union[str, Sequence[int], None]
 RGBA = tuple[float, float, float, float]

@@ -9,7 +9,7 @@ on every call — is done here exactly once.
 from __future__ import annotations
 
 import os
-from typing import Union
+from typing import Any, Union
 
 from fontTools.ttLib import TTFont
 
@@ -40,20 +40,23 @@ class IVSFont:
         else:
             self._ttfont = TTFont(os.fspath(font), fontNumber=font_number, lazy=True)
 
+        # fontTools table objects are dynamically typed; annotate the ones we
+        # poke attributes/indices on as Any so the type checker stays quiet.
         self._glyph_set = self._ttfont.getGlyphSet()
         self._glyph_names = frozenset(self._ttfont.getGlyphNames())
-        self._cmap = self._ttfont.getBestCmap()  # codepoint -> glyph name
-        if self._cmap is None:
+        cmap = self._ttfont.getBestCmap()  # codepoint -> glyph name
+        if cmap is None:
             raise MojivsError(
                 "font has no usable Unicode cmap subtable; mojivs cannot map "
                 "characters to glyphs for this font"
             )
-        self._hmtx = self._ttfont["hmtx"]
-        self._vmtx = self._ttfont["vmtx"] if "vmtx" in self._ttfont else None
-        self._vorg = self._ttfont["VORG"] if "VORG" in self._ttfont else None
+        self._cmap: dict[int, str] = cmap
+        self._hmtx: Any = self._ttfont["hmtx"]
+        self._vmtx: Any = self._ttfont["vmtx"] if "vmtx" in self._ttfont else None
+        self._vorg: Any = self._ttfont["VORG"] if "VORG" in self._ttfont else None
 
-        head = self._ttfont["head"]
-        hhea = self._ttfont["hhea"]
+        head: Any = self._ttfont["head"]
+        hhea: Any = self._ttfont["hhea"]
         self.units_per_em: int = head.unitsPerEm
         self.ascent: int = hhea.ascent
         self.descent: int = hhea.descent
@@ -130,9 +133,7 @@ class IVSFont:
         Uses the ``VORG`` table when present, otherwise the ascent.
         """
         if self._vorg is not None:
-            return self._vorg.VOriginRecords.get(
-                glyph_name, self._vorg.defaultVertOriginY
-            )
+            return self._vorg.VOriginRecords.get(glyph_name, self._vorg.defaultVertOriginY)
         return self.ascent
 
     def resolve_run(
