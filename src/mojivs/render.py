@@ -21,7 +21,7 @@ from fontTools.pens.basePen import BasePen
 from PIL import Image
 
 from .colors import Color, RGBA, to_rgba
-from .shaping import Align, Direction, Orientation, PlacedGlyph, shape
+from .shaping import Align, Direction, Orientation, PlacedGlyph, shape_for_output
 
 if TYPE_CHECKING:
     from .font import IVSFont
@@ -163,16 +163,16 @@ def render(
     Returns:
         A :class:`PIL.Image.Image` in ``RGBA`` mode.
     """
-    pad = padding + stroke_width / 2.0
-    shaped = shape(
+    shaped = shape_for_output(
         font,
         text,
+        stroke_width=stroke_width,
+        padding=padding,
         size=size,
         direction=direction,
         align=align,
         line_spacing=line_spacing,
         letter_spacing=letter_spacing,
-        padding=pad,
         orientation=orientation,
         tate_chu_yoko=tate_chu_yoko,
         on_missing=on_missing,
@@ -205,7 +205,15 @@ def render_to_box(
     The line height is scaled to ``height``. If the text is wider than ``width``
     it is compressed horizontally; if narrower, the characters are spread evenly
     (justified) to fill the width. The returned image is exactly ``box`` pixels.
+
+    This is a horizontal single-line helper only. For vertical writing or
+    multiple lines, use :func:`render` (which sizes the canvas to the content).
     """
+    if "\n" in text:
+        raise ValueError(
+            "render_to_box renders a single line; newlines are not supported. "
+            "Use render() for multi-line or vertical text."
+        )
     box_w, box_h = box
     run = font.resolve_run(text, on_missing=on_missing)
 

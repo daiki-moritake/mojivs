@@ -49,6 +49,20 @@ def test_vertical_requires_vertical_metrics(font, monkeypatch):
         font.shape("あ", direction="vertical")
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"direction": "sideways"},
+        {"align": "middle"},
+        {"orientation": "Mixed"},
+        {"tate_chu_yoko": -1},
+    ],
+)
+def test_shape_rejects_invalid_enum_args(font, kwargs):
+    with pytest.raises(ValueError):
+        font.shape("辻", **kwargs)
+
+
 def test_is_upright_in_vertical():
     from mojivs.shaping import is_upright_in_vertical
 

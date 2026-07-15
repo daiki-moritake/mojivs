@@ -8,13 +8,13 @@ the optional ``reportlab`` package (``pip install mojivs[pdf]``).
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from xml.sax.saxutils import quoteattr
+from xml.sax.saxutils import escape
 
 from fontTools.pens.basePen import BasePen
 from fontTools.pens.svgPathPen import SVGPathPen
 
 from .colors import Color, to_hex
-from .shaping import Align, Direction, Orientation, ShapedText, shape
+from .shaping import Align, Direction, Orientation, ShapedText, shape_for_output
 
 if TYPE_CHECKING:
     from .font import IVSFont
@@ -71,9 +71,9 @@ def _svg_from_shaped(
         if not d:
             continue
         transform = f"matrix({','.join(_num(v) for v in pg.transform)})"
-        title = quoteattr(pg.cluster)
+        title = escape(pg.cluster)
         parts.append(
-            f'<path transform="{transform}" {paint} d="{d}"><title>{title[1:-1]}'
+            f'<path transform="{transform}" {paint} d="{d}"><title>{title}'
             f"</title></path>"
         )
 
@@ -103,16 +103,16 @@ def to_svg(
 
     Accepts the same layout and style options as :func:`mojivs.render.render`.
     """
-    pad = padding + stroke_width / 2.0
-    shaped = shape(
+    shaped = shape_for_output(
         font,
         text,
+        stroke_width=stroke_width,
+        padding=padding,
         size=size,
         direction=direction,
         align=align,
         line_spacing=line_spacing,
         letter_spacing=letter_spacing,
-        padding=pad,
         orientation=orientation,
         tate_chu_yoko=tate_chu_yoko,
         on_missing=on_missing,
@@ -192,16 +192,16 @@ def to_pdf(
             "to_pdf requires reportlab; install it with 'pip install mojivs[pdf]'"
         ) from exc
 
-    pad = padding + stroke_width / 2.0
-    shaped = shape(
+    shaped = shape_for_output(
         font,
         text,
+        stroke_width=stroke_width,
+        padding=padding,
         size=size,
         direction=direction,
         align=align,
         line_spacing=line_spacing,
         letter_spacing=letter_spacing,
-        padding=pad,
         orientation=orientation,
         tate_chu_yoko=tate_chu_yoko,
         on_missing=on_missing,

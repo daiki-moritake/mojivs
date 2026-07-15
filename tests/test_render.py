@@ -33,6 +33,22 @@ def test_render_to_box_exact_size(font):
     assert img.size == (300, 40)
 
 
+def test_render_to_box_rejects_newline(font):
+    with pytest.raises(ValueError):
+        font.render_to_box("a\nb", (100, 40))
+
+
+def test_render_does_not_clip_overhanging_ink(font):
+    # 'f' overhangs its advance width; the canvas must grow to fit its ink so
+    # padding=0 does not clip it. Its inked size must match a padded render
+    # within anti-aliasing tolerance (a real clip would remove several pixels).
+    tight = font.render("f", size=200, padding=0).getchannel("A").getbbox()
+    padded = font.render("f", size=200, padding=10).getchannel("A").getbbox()
+    assert tight is not None and padded is not None
+    assert abs((tight[2] - tight[0]) - (padded[2] - padded[0])) <= 1  # ink width
+    assert abs((tight[3] - tight[1]) - (padded[3] - padded[1])) <= 1  # ink height
+
+
 def test_render_raises_on_unsupported(font):
     with pytest.raises(UnsupportedCharacterError):
         font.render(PUA, size=32)

@@ -14,7 +14,7 @@ from typing import Union
 from fontTools.ttLib import TTFont
 
 from . import ivs
-from .errors import UnsupportedCharacterError
+from .errors import MojivsError, UnsupportedCharacterError
 
 FontSource = Union[str, "os.PathLike[str]", TTFont]
 
@@ -43,6 +43,11 @@ class IVSFont:
         self._glyph_set = self._ttfont.getGlyphSet()
         self._glyph_names = frozenset(self._ttfont.getGlyphNames())
         self._cmap = self._ttfont.getBestCmap()  # codepoint -> glyph name
+        if self._cmap is None:
+            raise MojivsError(
+                "font has no usable Unicode cmap subtable; mojivs cannot map "
+                "characters to glyphs for this font"
+            )
         self._hmtx = self._ttfont["hmtx"]
         self._vmtx = self._ttfont["vmtx"] if "vmtx" in self._ttfont else None
         self._vorg = self._ttfont["VORG"] if "VORG" in self._ttfont else None
@@ -52,6 +57,12 @@ class IVSFont:
         self.units_per_em: int = head.unitsPerEm
         self.ascent: int = hhea.ascent
         self.descent: int = hhea.descent
+
+        # Cap height is used to vertically center tate-chu-yoko digits; fall back
+        # to a typical proportion of the em when the font does not declare it.
+        os2 = self._ttfont["OS/2"] if "OS/2" in self._ttfont else None
+        cap = getattr(os2, "sCapHeight", 0) if os2 is not None else 0
+        self.cap_height: int = cap if cap > 0 else round(self.units_per_em * 0.7)
 
     # -- glyph resolution ---------------------------------------------------
 
