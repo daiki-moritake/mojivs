@@ -11,6 +11,8 @@ from __future__ import annotations
 import os
 from typing import Any, Union
 
+from fontTools.pens.boundsPen import ControlBoundsPen
+from fontTools.pens.recordingPen import DecomposingRecordingPen, replayRecording
 from fontTools.ttLib import TTFont
 
 from . import ivs
@@ -67,6 +69,13 @@ class IVSFont:
         cap = getattr(os2, "sCapHeight", 0) if os2 is not None else 0
         self.cap_height: int = cap if cap > 0 else round(self.units_per_em * 0.7)
 
+        # Interpreting a glyph's charstring/glyf program is the single most
+        # expensive step in a render, so each glyph's outline is decoded once
+        # and cached here (as a replayable pen recording), then reused for both
+        # bounds computation and rasterization instead of being re-interpreted.
+        self._outline_cache: dict[str, list] = {}
+        self._cbounds_cache: dict[str, tuple[float, float, float, float] | None] = {}
+
     # -- glyph resolution ---------------------------------------------------
 
     def glyph_name(self, base: str, selectors: list[str] | None = None) -> str | None:
@@ -103,6 +112,39 @@ class IVSFont:
     def glyph_set(self):
         """The fontTools glyph set (maps glyph name -> drawable glyph)."""
         return self._glyph_set
+
+    def glyph_outline(self, glyph_name: str) -> list:
+        """Return ``glyph_name``'s outline as a replayable pen recording (cached).
+
+        The font's charstring/glyf program is interpreted once per glyph (with
+        any components decomposed) and the pen calls are recorded. Callers
+        replay the recording — via :func:`fontTools.pens.recordingPen.replayRecording`
+        — instead of re-running the interpreter, which is what dominates render
+        time. Repeated glyphs (common in real text) reuse the cached recording.
+        """
+        outline = self._outline_cache.get(glyph_name)
+        if outline is None:
+            pen = DecomposingRecordingPen(self._glyph_set)
+            self._glyph_set[glyph_name].draw(pen)
+            outline = pen.value
+            self._outline_cache[glyph_name] = outline
+        return outline
+
+    def glyph_control_bounds(self, glyph_name: str) -> tuple[float, float, float, float] | None:
+        """Control-point bounds ``(x0, y0, x1, y1)`` of ``glyph_name`` in font units.
+
+        A cheap superset of the true outline bounds (exactly what the layout
+        engine needs to avoid clipping), computed from the cached outline so the
+        glyph is never interpreted a second time. Returns ``None`` for an empty
+        glyph (e.g. a space).
+        """
+        if glyph_name in self._cbounds_cache:
+            return self._cbounds_cache[glyph_name]
+        pen = ControlBoundsPen(self._glyph_set)
+        replayRecording(self.glyph_outline(glyph_name), pen)
+        bounds = pen.bounds
+        self._cbounds_cache[glyph_name] = bounds
+        return bounds
 
     @property
     def line_height(self) -> int:

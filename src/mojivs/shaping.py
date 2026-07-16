@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from fontTools.misc.transform import Transform
-from fontTools.pens.boundsPen import ControlBoundsPen
 
 if TYPE_CHECKING:
     from .font import IVSFont
@@ -302,17 +301,16 @@ def _ink_bounds(font: IVSFont, placed: list[PlacedGlyph]):
     """Device-space bounding box of all glyph ink, or ``None`` if there is none.
 
     Uses control-point bounds (a cheap superset of the true outline bounds),
-    which is exactly what is needed to guarantee nothing is clipped.
+    which is exactly what is needed to guarantee nothing is clipped. The bounds
+    come from the font's per-glyph cache, so no glyph is interpreted here.
     """
-    glyph_set = font.glyph_set
     min_x = min_y = float("inf")
     max_x = max_y = float("-inf")
     for pg in placed:
-        pen = ControlBoundsPen(glyph_set)
-        glyph_set[pg.glyph_name].draw(pen)
-        if pen.bounds is None:
+        bounds = font.glyph_control_bounds(pg.glyph_name)
+        if bounds is None:
             continue
-        x0, y0, x1, y1 = pen.bounds
+        x0, y0, x1, y1 = bounds
         for corner in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
             dx, dy = pg.transform.transformPoint(corner)
             min_x, max_x = min(min_x, dx), max(max_x, dx)
