@@ -23,13 +23,23 @@ classifiers = [
 dependencies = [
     "fonttools>=4.0",
     "pillow>=9.0",
-    "pycairo>=1.20",
     "numpy>=1.21",
 ]
 
 [project.optional-dependencies]
+# Rasterizer backends — install at least one. ``cairo`` powers the default
+# backend (and all stroked text); ``freetype`` is the faster, cairo-free path.
+cairo = ["pycairo>=1.20"]
+freetype = ["freetype-py>=2.3"]
 pdf = ["reportlab>=4.0"]
-dev = ["pytest>=7.0", "reportlab>=4.0", "ruff>=0.6", "pyright>=1.1.380"]
+dev = [
+    "pytest>=7.0",
+    "pycairo>=1.20",
+    "freetype-py>=2.3",
+    "reportlab>=4.0",
+    "ruff>=0.6",
+    "pyright>=1.1.380",
+]
 
 [project.urls]
 Homepage = "https://github.com/daiki-moritake/mojivs"
