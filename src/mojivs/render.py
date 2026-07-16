@@ -18,6 +18,7 @@ import cairo
 import numpy as np
 from fontTools.misc.transform import Transform
 from fontTools.pens.basePen import BasePen
+from fontTools.pens.recordingPen import replayRecording
 from PIL import Image
 
 from .colors import RGBA, Color, to_rgba
@@ -61,26 +62,33 @@ def _surface_to_image(surface: cairo.ImageSurface) -> Image.Image:
 
     Cairo stores ARGB32 as premultiplied BGRA; this un-premultiplies so that
     anti-aliased edges keep their true color instead of darkening.
+
+    Only partially transparent pixels (``0 < a < 255``) actually need dividing:
+    opaque pixels already hold their true color and fully transparent pixels are
+    zero. Text ink is sparse, so restricting the float division to those edge
+    pixels avoids converting the whole canvas to float.
     """
     width = surface.get_width()
     height = surface.get_height()
     stride = surface.get_stride()
-    buf = (
-        np.frombuffer(surface.get_data(), np.uint8)
-        .reshape(height, stride // 4, 4)[:, :width, :]
-        .astype(np.float32)
-    )
-    b, g, r, a = buf[..., 0], buf[..., 1], buf[..., 2], buf[..., 3]
-    alpha = np.where(a > 0, a, 1.0)
-    out = np.stack(
-        [
-            np.clip(r * 255.0 / alpha, 0, 255),
-            np.clip(g * 255.0 / alpha, 0, 255),
-            np.clip(b * 255.0 / alpha, 0, 255),
-            a,
-        ],
-        axis=-1,
-    ).astype(np.uint8)
+    bgra = np.frombuffer(surface.get_data(), np.uint8).reshape(height, stride // 4, 4)[:, :width, :]
+
+    # Reorder cairo's BGRA into straight-alpha RGBA (channels only; values fixed
+    # up below where premultiplication actually darkened them).
+    out = np.empty((height, width, 4), np.uint8)
+    out[..., 0] = bgra[..., 2]  # R
+    out[..., 1] = bgra[..., 1]  # G
+    out[..., 2] = bgra[..., 0]  # B
+    a = bgra[..., 3]
+    out[..., 3] = a
+
+    edge = np.nonzero((a > 0) & (a < 255))
+    if edge[0].size:
+        scale = 255.0 / a[edge].astype(np.float32)
+        for c in range(3):
+            chan = out[..., c][edge].astype(np.float32) * scale
+            out[..., c][edge] = np.clip(chan, 0, 255).astype(np.uint8)
+
     return Image.fromarray(out, "RGBA")
 
 
@@ -106,7 +114,7 @@ def _rasterize(
     glyph_set = font.glyph_set
     for pg in glyphs:
         pen = _CairoPen(glyph_set, ctx, pg.transform)
-        glyph_set[pg.glyph_name].draw(pen)
+        replayRecording(font.glyph_outline(pg.glyph_name), pen)
 
         if stroke_width > 0 and stroke[3] > 0:
             ctx.set_line_width(stroke_width)

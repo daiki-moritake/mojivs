@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from xml.sax.saxutils import escape
 
 from fontTools.pens.basePen import BasePen
+from fontTools.pens.recordingPen import replayRecording
 from fontTools.pens.svgPathPen import SVGPathPen
 
 from .colors import Color, to_hex
@@ -66,7 +67,7 @@ def _svg_from_shaped(
 
     for pg in shaped.glyphs:
         pen = SVGPathPen(glyph_set)
-        glyph_set[pg.glyph_name].draw(pen)
+        replayRecording(font.glyph_outline(pg.glyph_name), pen)
         d = pen.getCommands()
         if not d:
             continue
@@ -230,7 +231,7 @@ def to_pdf(
         # Convert top-down device y to PDF's bottom-up page coordinates.
         p = c.beginPath()
         pen = _ReportlabPen(glyph_set, p, pg.transform, shaped.height)
-        glyph_set[pg.glyph_name].draw(pen)
+        replayRecording(font.glyph_outline(pg.glyph_name), pen)
         c.drawPath(p, fill=1 if fill_a > 0 else 0, stroke=1 if do_stroke else 0)
 
     c.showPage()
