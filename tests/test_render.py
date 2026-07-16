@@ -49,6 +49,20 @@ def test_render_does_not_clip_overhanging_ink(font):
     assert abs((tight[3] - tight[1]) - (padded[3] - padded[1])) <= 1  # ink height
 
 
+def test_cairo_backend_requires_pycairo(font, monkeypatch):
+    # cairo is now an optional dependency, so the default backend must fail with
+    # a clear, actionable error when pycairo is absent (not an AttributeError on
+    # ``None``).
+    import importlib
+
+    # ``from .render import render`` in the package __init__ shadows the module
+    # name, so reach the real module object via importlib to patch its global.
+    render_mod = importlib.import_module("mojivs.render")
+    monkeypatch.setattr(render_mod, "cairo", None)
+    with pytest.raises(RuntimeError, match="pycairo"):
+        font.render("辻", size=32)
+
+
 def test_render_raises_on_unsupported(font):
     with pytest.raises(UnsupportedCharacterError):
         font.render(PUA, size=32)

@@ -1,20 +1,24 @@
 """Rasterizer — turns shaped glyph runs into :class:`PIL.Image.Image` objects.
 
-This is the "A" layer: it depends on cairo/Pillow/numpy and builds on top of the
-shaping layer (:mod:`mojivs.shaping`). Two entry points are provided:
+This is the "A" layer: it builds on the shaping layer (:mod:`mojivs.shaping`)
+and rasterizes with Pillow/numpy plus one of two optional backends. Two entry
+points are provided:
 
 * :func:`render` — natural layout (horizontal or vertical, multi-line) at a
   given em pixel size. This is what most callers want.
 * :func:`render_to_box` — fit a single horizontal line into an exact
   ``(width, height)`` pixel box, compressing when too wide and justifying
   (spreading the characters) when too narrow.
+
+Both accept ``backend="cairo"`` (default) or ``backend="freetype"``. cairo is
+imported lazily so the freetype-only install needs no pycairo; the cairo path
+raises a clear error if pycairo is missing (see :func:`_require_cairo`).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal
 
-import cairo
 import numpy as np
 from fontTools.misc.transform import Transform
 from fontTools.pens.basePen import BasePen
@@ -22,10 +26,39 @@ from fontTools.pens.recordingPen import replayRecording
 from PIL import Image
 
 from .colors import RGBA, Color, to_rgba
+from .render_ft import rasterize_ft
 from .shaping import Align, Direction, Orientation, PlacedGlyph, shape_for_output
 
 if TYPE_CHECKING:
     from .font import IVSFont
+
+    # pycairo ships no type stubs; treat it as an opaque module and tolerate the
+    # ImportError fallback (the freetype backend does not need it).
+    cairo: Any
+else:
+    try:
+        import cairo
+    except ImportError:  # pragma: no cover - exercised only without pycairo
+        cairo = None
+
+# Rasterizer backend selector. ``"cairo"`` (default) uses the built-in cairo
+# path; ``"freetype"`` uses the optional freetype-py backend (see render_ft),
+# which is faster but falls back to cairo whenever a stroke is requested.
+Backend = Literal["cairo", "freetype"]
+
+
+def _require_cairo() -> None:
+    if cairo is None:
+        raise RuntimeError(
+            "the 'cairo' backend requires pycairo; install it with "
+            "'pip install mojivs[cairo]', or use backend='freetype' "
+            "(pip install mojivs[freetype])"
+        )
+
+
+def _stroke_active(stroke: RGBA, stroke_width: float) -> bool:
+    """Whether a visible outline would be drawn for these stroke settings."""
+    return stroke_width > 0 and stroke[3] > 0
 
 
 class _CairoPen(BasePen):
@@ -57,7 +90,7 @@ class _CairoPen(BasePen):
         self._ctx.close_path()
 
 
-def _surface_to_image(surface: cairo.ImageSurface) -> Image.Image:
+def _surface_to_image(surface: Any) -> Image.Image:
     """Convert a cairo ARGB32 surface to a straight-alpha RGBA Pillow image.
 
     Cairo stores ARGB32 as premultiplied BGRA; this un-premultiplies so that
@@ -104,6 +137,7 @@ def _rasterize(
     background: RGBA,
 ) -> Image.Image:
     """Rasterize placed glyphs onto a single surface and return an RGBA image."""
+    _require_cairo()
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, max(width, 1), max(height, 1))
     ctx = cairo.Context(surface)
 
@@ -145,6 +179,7 @@ def render(
     stroke_width: float = 0.0,
     background: Color = None,
     on_missing: str = "raise",
+    backend: Backend = "cairo",
 ) -> Image.Image:
     """Render ``text`` to an RGBA image using the font's natural metrics.
 
@@ -167,10 +202,17 @@ def render(
         letter_spacing: Extra space between characters, in pixels.
         padding: Transparent padding around the text, in pixels.
         on_missing: ``"raise"`` (default) or ``"skip"`` for unsupported clusters.
+        backend: Rasterizer to use. ``"cairo"`` (default) or ``"freetype"``
+            (faster, no system cairo needed; requires ``mojivs[freetype]``).
+            The ``"freetype"`` backend only fills, so it falls back to cairo
+            automatically whenever a stroke is requested.
 
     Returns:
         A :class:`PIL.Image.Image` in ``RGBA`` mode.
     """
+    if backend not in ("cairo", "freetype"):
+        raise ValueError(f"backend must be 'cairo' or 'freetype', got {backend!r}")
+
     shaped = shape_for_output(
         font,
         text,
@@ -185,15 +227,30 @@ def render(
         tate_chu_yoko=tate_chu_yoko,
         on_missing=on_missing,
     )
+
+    fill = to_rgba(color)
+    stroke_rgba = to_rgba(stroke)
+    background_rgba = to_rgba(background)
+
+    if backend == "freetype" and not _stroke_active(stroke_rgba, stroke_width):
+        return rasterize_ft(
+            font,
+            shaped.glyphs,
+            shaped.width,
+            shaped.height,
+            fill=fill,
+            background=background_rgba,
+        )
+
     return _rasterize(
         font,
         shaped.glyphs,
         shaped.width,
         shaped.height,
-        fill=to_rgba(color),
-        stroke=to_rgba(stroke),
+        fill=fill,
+        stroke=stroke_rgba,
         stroke_width=stroke_width,
-        background=to_rgba(background),
+        background=background_rgba,
     )
 
 
@@ -207,6 +264,7 @@ def render_to_box(
     stroke_width: float = 0.0,
     background: Color = None,
     on_missing: str = "raise",
+    backend: Backend = "cairo",
 ) -> Image.Image:
     """Render a single horizontal line fitted into ``box = (width, height)`` px.
 
@@ -216,7 +274,12 @@ def render_to_box(
 
     This is a horizontal single-line helper only. For vertical writing or
     multiple lines, use :func:`render` (which sizes the canvas to the content).
+
+    ``backend`` selects the rasterizer as in :func:`render`: ``"cairo"``
+    (default) or ``"freetype"`` (falls back to cairo when a stroke is drawn).
     """
+    if backend not in ("cairo", "freetype"):
+        raise ValueError(f"backend must be 'cairo' or 'freetype', got {backend!r}")
     if "\n" in text:
         raise ValueError(
             "render_to_box renders a single line; newlines are not supported. "
@@ -250,13 +313,20 @@ def render_to_box(
         placed.append(PlacedGlyph(glyph_name, cluster, transform))
         x += font.advance_width(glyph_name) * scale_x + extra_spacing
 
+    fill = to_rgba(color)
+    stroke_rgba = to_rgba(stroke)
+    background_rgba = to_rgba(background)
+
+    if backend == "freetype" and not _stroke_active(stroke_rgba, stroke_width):
+        return rasterize_ft(font, placed, box_w, box_h, fill=fill, background=background_rgba)
+
     return _rasterize(
         font,
         placed,
         box_w,
         box_h,
-        fill=to_rgba(color),
-        stroke=to_rgba(stroke),
+        fill=fill,
+        stroke=stroke_rgba,
         stroke_width=stroke_width,
-        background=to_rgba(background),
+        background=background_rgba,
     )
