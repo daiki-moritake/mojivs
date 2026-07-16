@@ -143,9 +143,7 @@ def rasterize_ft(
         # anti-aliasing lands where the cairo backend places it.
         floor_e = np.floor(e)
         floor_f = np.floor(f)
-        delta = freetype.Vector(
-            int(round((e - floor_e) * 64)), int(round(-(f - floor_f) * 64))
-        )
+        delta = freetype.Vector(int(round((e - floor_e) * 64)), int(round(-(f - floor_f) * 64)))
         face.set_transform(matrix, delta)
         face.load_glyph(gid, flags)
 
