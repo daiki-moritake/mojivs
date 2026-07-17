@@ -198,4 +198,4 @@ def _compose(
         inv[nonzero] = 255.0 / alpha[nonzero]
         for ch in range(3):
             out[..., ch] = np.clip(canvas[..., ch] * inv, 0, 255).astype(np.uint8)
-    return Image.fromarray(out, "RGBA")
+    return Image.fromarray(out)
