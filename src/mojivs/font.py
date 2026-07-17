@@ -298,7 +298,8 @@ class IVSFont:
 
     def __repr__(self) -> str:
         try:
-            name = self._ttfont["name"].getDebugName(4) or "?"
+            name_table: Any = self._ttfont["name"]
+            name = name_table.getDebugName(4) or "?"
         except Exception:  # pragma: no cover - defensive
             name = "?"
         return f"IVSFont({name!r}, upm={self.units_per_em})"
