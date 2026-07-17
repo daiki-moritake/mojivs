@@ -122,7 +122,7 @@ def _surface_to_image(surface: Any) -> Image.Image:
             chan = out[..., c][edge].astype(np.float32) * scale
             out[..., c][edge] = np.clip(chan, 0, 255).astype(np.uint8)
 
-    return Image.fromarray(out, "RGBA")
+    return Image.fromarray(out)
 
 
 def _rasterize(
