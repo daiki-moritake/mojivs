@@ -8,6 +8,7 @@ on every call — is done here exactly once.
 
 from __future__ import annotations
 
+import io
 import os
 from typing import Any, Union
 
@@ -37,10 +38,18 @@ class IVSFont:
     """
 
     def __init__(self, font: FontSource, *, font_number: int = 0):
+        self._source = font
+        self._font_number = font_number
         if isinstance(font, TTFont):
             self._ttfont = font
         else:
             self._ttfont = TTFont(os.fspath(font), fontNumber=font_number, lazy=True)
+
+        # Lazily populated by the optional FreeType backend (see render_ft): the
+        # raw font bytes and a cached freetype.Face. Kept here so their lifetime
+        # matches the font and they are built at most once.
+        self._font_bytes: bytes | None = None
+        self._ft_face: Any = None
 
         # fontTools table objects are dynamically typed; annotate the ones we
         # poke attributes/indices on as Any so the type checker stays quiet.
@@ -112,6 +121,23 @@ class IVSFont:
     def glyph_set(self):
         """The fontTools glyph set (maps glyph name -> drawable glyph)."""
         return self._glyph_set
+
+    def font_data(self) -> bytes:
+        """Raw bytes of the underlying font file (cached).
+
+        Used by the optional FreeType backend, which needs the font file itself.
+        Read from the source path when available, otherwise serialized from the
+        in-memory :class:`~fontTools.ttLib.TTFont`.
+        """
+        if self._font_bytes is None:
+            if isinstance(self._source, TTFont):
+                buffer = io.BytesIO()
+                self._source.save(buffer)
+                self._font_bytes = buffer.getvalue()
+            else:
+                with open(os.fspath(self._source), "rb") as handle:
+                    self._font_bytes = handle.read()
+        return self._font_bytes
 
     def glyph_outline(self, glyph_name: str) -> list:
         """Return ``glyph_name``'s outline as a replayable pen recording (cached).
@@ -272,7 +298,8 @@ class IVSFont:
 
     def __repr__(self) -> str:
         try:
-            name = self._ttfont["name"].getDebugName(4) or "?"
+            name_table: Any = self._ttfont["name"]
+            name = name_table.getDebugName(4) or "?"
         except Exception:  # pragma: no cover - defensive
             name = "?"
         return f"IVSFont({name!r}, upm={self.units_per_em})"
