@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question / usage help
+    url: https://github.com/daiki-moritake/mojivs/discussions
+    about: For "how do I…" questions, please open a Discussion instead of an issue.

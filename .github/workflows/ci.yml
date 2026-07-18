@@ -7,17 +7,31 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.12"]
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.9", "3.12", "3.13"]
+        exclude:
+          # Python 3.9 on the arm64 macOS runners is flaky in setup-python;
+          # 3.9 is still covered on Linux.
+          - os: macos-latest
+            python-version: "3.9"
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install cairo (required by pycairo)
+      # pycairo needs the native cairo library + pkg-config. Windows is omitted:
+      # pycairo ships no binary wheels there and building cairo in CI is brittle.
+      # The freetype backend covers cairo-free platforms at runtime.
+      - name: Install cairo (Linux)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libcairo2-dev pkg-config
+
+      - name: Install cairo (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cairo pkg-config
 
       - uses: actions/setup-python@v5
         with:
@@ -39,4 +53,4 @@ jobs:
         run: .venv/bin/pyright
 
       - name: Tests (pytest)
-        run: .venv/bin/pytest -q
+        run: .venv/bin/pytest -q --cov=mojivs --cov-report=term-missing

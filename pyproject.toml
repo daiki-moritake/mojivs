@@ -34,6 +34,7 @@ freetype = ["freetype-py>=2.3"]
 pdf = ["reportlab>=4.0"]
 dev = [
     "pytest>=7.0",
+    "pytest-cov>=4.0",
     "pycairo>=1.20",
     "freetype-py>=2.3",
     "reportlab>=4.0",
@@ -50,10 +51,30 @@ Issues = "https://github.com/daiki-moritake/mojivs/issues"
 packages = ["src/mojivs"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/mojivs", "tests", "examples", "README.md", "LICENSE"]
+include = [
+    "src/mojivs",
+    "tests",
+    "examples",
+    "scripts",
+    "README.md",
+    "README.en.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["mojivs"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+# render_ft/export guard optional backends behind ImportError; those defensive
+# branches are exercised only when a dependency is absent.
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 
 [tool.ruff]
 line-length = 100

@@ -10,9 +10,24 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+.ruff_cache/
+
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 
 # macOS
 .DS_Store
 
 # Local render outputs (examples/basic.py regenerates these)
 *.png
+
+# Sample fonts: only HaranoAjiGothic-Medium.otf (used by tests/examples) is
+# tracked. The other Harano Aji faces are 75MB combined and are downloadable
+# from https://github.com/trueroad/HaranoAjiFonts — keep them out of the repo.
+fonts/**/*.otf
+fonts/**/*.ttf
+fonts/**/*.ttc
+!fonts/HaranoAjiFonts-master/HaranoAjiGothic-Medium.otf

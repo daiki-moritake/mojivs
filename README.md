@@ -1,5 +1,11 @@
 # mojivs
 
+[![CI](https://github.com/daiki-moritake/mojivs/actions/workflows/ci.yml/badge.svg)](https://github.com/daiki-moritake/mojivs/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+**日本語** | [English](README.en.md)
+
 **IVS（異体字セレクタ）対応の日本語テキスト → 画像レンダラ**
 
 日本語テキストを画像にレンダリングします。とくに **IVS（Ideographic Variation
@@ -192,7 +198,9 @@ mojivs/
 
 ## サンプルフォント
 
-`fonts/` に Harano Aji Fonts（Adobe-Japan1-7 対応、独自ライセンス）を同梱しています。
+`fonts/` にはテスト・サンプル用として Harano Aji Fonts（Adobe-Japan1-7 対応、独自
+ライセンス）の **`HaranoAjiGothic-Medium.otf` 1 面のみ**を同梱しています。他のウェイト
+や明朝は下記から取得してください（リポジトリ肥大化を避けるため追跡していません）。
 <https://github.com/trueroad/HaranoAjiFonts>
 
 ## 開発
