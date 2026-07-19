@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `py.typed` marker (PEP 561) so downstream type checkers pick up the package's
+  inline type hints.
 - `scripts/update_ivd.py` to re-fetch the bundled Unicode IVD table, with the
   source, version, and license recorded in `scripts/README.md`.
 - Test coverage measurement (`pytest-cov`) and an expanded CI matrix
