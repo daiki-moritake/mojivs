@@ -74,7 +74,10 @@ def make_hero(font: IVSFont) -> None:
     small_font = ImageFont.truetype(str(FONT_PATH), 21)
 
     title = "「辻」＋ VS17（一点しんにょう）を指定して描画"
-    caption = "同じ入力でも結果が違う。mojivs は fonttools だけで IVS を解決（HarfBuzz も UVS cmap も不要）"
+    caption = (
+        "同じ入力でも結果が違う。mojivs は fonttools だけで IVS を解決"
+        "（HarfBuzz も UVS cmap も不要）"
+    )
 
     width = margin * 2 + cell * 3
     title_y = margin
