@@ -8,11 +8,13 @@
 
 **IVS（異体字セレクタ）対応の日本語テキスト → 画像レンダラ**
 
-![辻の異体字セレクタによる字形の違い（Pillow と mojivs の比較）](https://raw.githubusercontent.com/daiki-moritake/mojivs/main/docs/images/hero_ivs.png)
+![辻＋VS17 の描画比較：Pillow(BASIC) は無視、Pillow+libraqm と mojivs は正しい字形](https://raw.githubusercontent.com/daiki-moritake/mojivs/main/docs/images/hero_ivs.png)
 
 日本語テキストを画像にレンダリングします。とくに **IVS（Ideographic Variation
 Sequence / 異体字）** を Adobe-Japan1 の IVD から解決し、フォント内の CID グリフに
-マッピングします。これは Pillow の `ImageFont` ではできない処理です。
+マッピングします。Pillow の `ImageFont` は既定（BASIC レイアウト）では異体字セレクタを
+無視します（libraqm/HarfBuzz を入れれば描けますが、フォントの UVS cmap に依存します）。
+**mojivs は libraqm/HarfBuzz なしで、fonttools だけで IVS を解決します。**
 
 たとえば「辻」「葛」「髙」「﨑」「鯛」などの異体字を、正しい字形で画像化できます。
 

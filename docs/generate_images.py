@@ -5,7 +5,7 @@ Run from anywhere after ``pip install -e ".[dev]"`` (needs the cairo backend):
     python docs/generate_images.py
 
 Produces:
-  hero_ivs.png       Pillow vs mojivs on the same 辻 + different selectors.
+  hero_ivs.png       辻+VS17 across Pillow BASIC / Pillow+libraqm / mojivs.
   feature_outline.png  Stroked text on a dark background.
   feature_vertical.png Vertical writing with tate-chu-yoko.
   feature_box.png      Fit into an exact pixel box.
@@ -29,12 +29,13 @@ OUT = ROOT / "docs" / "images"
 INK = "#1a1a1a"
 MUTED = "#6b7280"
 ACCENT = "#e5484d"
+GREEN = "#2e7d32"
 LINE = "#e5e7eb"
 BG = "#ffffff"
 
 TSUJI = "辻"
-VS17 = "\U000e0100"  # one-dot shinnyō
-VS18 = "\U000e0101"  # two-dot shinnyō
+VS17 = "\U000e0100"  # one-dot shinnyō — differs from the font's default glyph
+VS18 = "\U000e0101"  # two-dot shinnyō — same as the default glyph for this font
 
 
 def _center_glyph(canvas: Image.Image, box: tuple[int, int, int, int], glyph: Image.Image) -> None:
@@ -45,76 +46,83 @@ def _center_glyph(canvas: Image.Image, box: tuple[int, int, int, int], glyph: Im
 
 
 def make_hero(font: IVSFont) -> None:
-    """A 2x2 grid: rows Pillow/mojivs, columns +VS17/+VS18.
+    """Three columns rendering the same request: 辻 + VS17 (one-dot shinnyō).
 
-    Pillow renders the base glyph identically regardless of the selector; mojivs
-    resolves each selector to its own Adobe-Japan1 glyph. Seeing the two mojivs
-    cells differ (and the two Pillow cells match) is the whole pitch.
+    * Pillow BASIC layout ignores the selector and shows the default glyph.
+    * Pillow with libraqm (HarfBuzz) shapes the selector via the font's UVS
+      cmap and gets the right glyph — but needs libraqm installed.
+    * mojivs resolves the IVS through the Adobe-Japan1 IVD with fonttools only:
+      correct glyph, no HarfBuzz and no dependence on the font's UVS cmap.
+
+    The honest point is not "Pillow can't" but "mojivs needs no HarfBuzz".
     """
-    glyph_px = 160
-    cell = 220
+    from PIL import features
+
+    if not features.check("raqm"):
+        raise RuntimeError(
+            "generating the hero needs Pillow built with libraqm (raqm) so the "
+            "'Pillow + libraqm' column is real; install libraqm and retry."
+        )
+
+    glyph_px = 150
+    cell = 250
     margin = 40
-    label_w = 120  # room for row labels on the left
-    grid_left = margin + label_w
-    title_band = 52
-    header_band = 40
-
     title_font = ImageFont.truetype(str(FONT_PATH), 30)
-    label_font = ImageFont.truetype(str(FONT_PATH), 26)
-    small_font = ImageFont.truetype(str(FONT_PATH), 22)
-    pil_glyph_font = ImageFont.truetype(str(FONT_PATH), glyph_px)
+    name_font = ImageFont.truetype(str(FONT_PATH), 27)
+    engine_font = ImageFont.truetype(str(FONT_PATH), 21)
+    status_font = ImageFont.truetype(str(FONT_PATH), 21)
+    small_font = ImageFont.truetype(str(FONT_PATH), 21)
 
-    title = "同じ「辻」＋ 異なる異体字セレクタ"
-    caption = "Pillow は字形が変わらない ／ mojivs は正しい異体字になる"
+    title = "「辻」＋ VS17（一点しんにょう）を指定して描画"
+    caption = "同じ入力でも結果が違う。mojivs は fonttools だけで IVS を解決（HarfBuzz も UVS cmap も不要）"
 
-    # Size the canvas so nothing (title/caption/grid) is clipped.
+    width = margin * 2 + cell * 3
+    title_y = margin
+    name_y = margin + 56
+    engine_y = name_y + 32
+    glyph_top = engine_y + 40
+    status_y = glyph_top + glyph_px + 40
+    caption_y = status_y + 44
+    height = caption_y + 40
+
+    # Ensure the caption is not clipped (it is the widest line).
     measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-    grid_right = grid_left + cell * 2
-    content_right = max(
-        grid_right,
-        margin + measure.textlength(title, font=title_font),
-        margin + measure.textlength(caption, font=small_font),
-    )
-    width = int(content_right + margin)
-    grid_top = margin + title_band + header_band
-    height = grid_top + cell * 2 + title_band
+    width = max(width, int(margin * 2 + measure.textlength(caption, font=small_font)))
 
     img = Image.new("RGBA", (width, height), BG)
     draw = ImageDraw.Draw(img)
+    draw.text((margin, title_y), title, font=title_font, fill=INK)
 
-    draw.text((margin, margin), title, font=title_font, fill=INK)
+    font_basic = ImageFont.truetype(str(FONT_PATH), glyph_px, layout_engine=ImageFont.Layout.BASIC)
+    font_raqm = ImageFont.truetype(str(FONT_PATH), glyph_px, layout_engine=ImageFont.Layout.RAQM)
 
-    col_x = [grid_left, grid_left + cell]
-    row_y = [grid_top, grid_top + cell]
+    columns = [
+        ("Pillow", "BASIC レイアウト", "セレクタを無視", ACCENT, "pil_basic"),
+        ("Pillow", "＋ libraqm", "正しい（HarfBuzz 必須）", GREEN, "pil_raqm"),
+        ("mojivs", "libraqm 不要", "正しい（IVD で解決）", GREEN, "mojivs"),
+    ]
 
-    for cx, header in zip(col_x, ("＋VS17", "＋VS18")):
-        draw.text(
-            (cx + cell // 2, grid_top - header_band // 2),
-            header,
-            font=label_font,
-            fill=MUTED,
-            anchor="mm",
-        )
-    for cy, header, col in zip(row_y, ("Pillow", "mojivs"), (MUTED, ACCENT)):
-        draw.text((grid_left - 24, cy + cell // 2), header, font=label_font, fill=col, anchor="rm")
+    for i, (name, engine, status, status_color, how) in enumerate(columns):
+        cx = margin + cell * i + cell // 2
+        gy = glyph_top + glyph_px // 2
+        draw.text((cx, name_y), name, font=name_font, fill=INK, anchor="mm")
+        draw.text((cx, engine_y), engine, font=engine_font, fill=MUTED, anchor="mm")
+        if how == "pil_basic":
+            # BASIC ignores the selector, so this is the default glyph (two-dot).
+            draw.text((cx, gy), TSUJI, font=font_basic, fill=INK, anchor="mm")
+        elif how == "pil_raqm":
+            draw.text((cx, gy), TSUJI + VS17, font=font_raqm, fill=INK, anchor="mm")
+        else:
+            glyph = font.render(TSUJI + VS17, size=glyph_px, color=INK)
+            box = (margin + cell * i, glyph_top, margin + cell * (i + 1), glyph_top + glyph_px)
+            _center_glyph(img, box, glyph)
+        draw.text((cx, status_y), status, font=status_font, fill=status_color, anchor="mm")
 
-    for j, sel in enumerate((VS17, VS18)):
-        # Pillow row: the selector is ignored, so both columns look identical.
-        draw.text(
-            (col_x[j] + cell // 2, row_y[0] + cell // 2),
-            TSUJI + sel,
-            font=pil_glyph_font,
-            fill=INK,
-            anchor="mm",
-        )
-        # mojivs row: the IVS resolves to the correct (differing) glyph.
-        glyph = font.render(TSUJI + sel, size=glyph_px, color=INK)
-        _center_glyph(img, (col_x[j], row_y[1], col_x[j] + cell, row_y[1] + cell), glyph)
+    for i in (1, 2):
+        x = margin + cell * i
+        draw.line((x, name_y - 24, x, status_y + 20), fill=LINE, width=2)
 
-    draw.line((grid_left, row_y[1], grid_right, row_y[1]), fill=LINE, width=2)
-    draw.line((col_x[1], grid_top, col_x[1], row_y[1] + cell), fill=LINE, width=2)
-
-    draw.text((margin, height - title_band + 8), caption, font=small_font, fill=MUTED)
+    draw.text((margin, caption_y), caption, font=small_font, fill=MUTED)
     img.convert("RGB").save(OUT / "hero_ivs.png")
 
 

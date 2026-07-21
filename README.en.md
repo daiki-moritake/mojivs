@@ -8,11 +8,14 @@
 
 **IVS-aware Japanese text → image renderer**
 
-![The same 辻 with different variation selectors — Pillow vs mojivs](https://raw.githubusercontent.com/daiki-moritake/mojivs/main/docs/images/hero_ivs.png)
+![Rendering 辻+VS17: Pillow BASIC ignores it, while Pillow+libraqm and mojivs render it correctly](https://raw.githubusercontent.com/daiki-moritake/mojivs/main/docs/images/hero_ivs.png)
 
 Render Japanese text to images. In particular, it resolves **IVS (Ideographic
 Variation Sequences / 異体字)** through the Adobe-Japan1 IVD and maps them to the
-font's CID glyphs — something Pillow's `ImageFont` cannot do.
+font's CID glyphs. Pillow's `ImageFont` ignores variation selectors in its
+default (BASIC) layout; with libraqm/HarfBuzz it can shape them, but relies on
+the font's UVS cmap. **mojivs resolves IVS with fonttools alone — no
+libraqm/HarfBuzz required.**
 
 For example, variant forms of 辻, 葛, 髙, 﨑, 鯛 render with the correct glyph shape.
 
