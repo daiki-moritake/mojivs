@@ -37,6 +37,18 @@ def test_iter_clusters_groups_svs_selector():
     assert list(ivs.iter_clusters(f"{fugu}{VS1}")) == [(fugu, [VS1])]
 
 
+def test_iter_clusters_groups_emoji_presentation_selector():
+    # VS16 (U+FE0F) attaches to the preceding base rather than forming its own
+    # cluster, so it is never treated as a standalone (unsupported) character.
+    sun = "☀"
+    assert list(ivs.iter_clusters(f"{sun}{VS16}")) == [(sun, [VS16])]
+
+
+def test_iter_clusters_skips_stray_svs_selector():
+    # A leading SVS selector with no base character is dropped, same as IVS.
+    assert list(ivs.iter_clusters(f"{VS16}A")) == [("A", [])]
+
+
 def test_iter_clusters_skips_stray_selector():
     # A leading selector with no base character is dropped.
     assert list(ivs.iter_clusters(f"{VS18}A")) == [("A", [])]

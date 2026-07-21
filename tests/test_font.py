@@ -59,6 +59,18 @@ def test_ivs_falls_back_to_base_when_selector_unknown(font):
     assert font.glyph_name("A", [VS18]) == font.glyph_name("A")
 
 
+def test_unmapped_svs_selector_is_swallowed_into_base(font):
+    # A presentation selector (VS16, U+FE0F) that the font's format-14 does not
+    # map attaches to the base and is swallowed: the base glyph renders and the
+    # cluster is NOT reported as unsupported. This pins the clustering behavior
+    # introduced by recognising SVS selectors.
+    vs16 = "️"
+    assert font.glyph_name("あ", [vs16]) == font.glyph_name("あ")
+    assert font.missing(f"あ{vs16}") == []
+    # A stray selector with no base is dropped, so it is never "missing".
+    assert font.missing(vs16) == []
+
+
 def test_resolve_run_skips_missing(font):
     run = font.resolve_run(f"辻{PUA}鯛", on_missing="skip")
     clusters = [cluster for cluster, _ in run]
