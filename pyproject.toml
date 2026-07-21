@@ -42,6 +42,9 @@ dev = [
     "pyright>=1.1.380",
 ]
 
+[project.scripts]
+mojivs = "mojivs.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/daiki-moritake/mojivs"
 Repository = "https://github.com/daiki-moritake/mojivs"

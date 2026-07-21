@@ -8,6 +8,8 @@
 
 **IVS-aware Japanese text → image renderer**
 
+![The same 辻 with different variation selectors — Pillow vs mojivs](https://raw.githubusercontent.com/daiki-moritake/mojivs/main/docs/images/hero_ivs.png)
+
 Render Japanese text to images. In particular, it resolves **IVS (Ideographic
 Variation Sequences / 異体字)** through the Adobe-Japan1 IVD and maps them to the
 font's CID glyphs — something Pillow's `ImageFont` cannot do.
@@ -38,6 +40,20 @@ For example, variant forms of 辻, 葛, 髙, 﨑, 鯛 render with the correct gl
 - **Few dependencies** — the core is only `fonttools` / `pillow` / `numpy`. The
   rasterizer (`pycairo` or `freetype-py`) and PDF output (`reportlab`) are all
   optional extras.
+
+## Gallery
+
+**Outline (stroke) + background**
+
+<img src="https://raw.githubusercontent.com/daiki-moritake/mojivs/main/docs/images/feature_outline.png" alt="Stroked text" width="360">
+
+**Vertical writing + tate-chu-yoko**
+
+<img src="https://raw.githubusercontent.com/daiki-moritake/mojivs/main/docs/images/feature_vertical.png" alt="Vertical writing with tate-chu-yoko" width="130">
+
+**Fit into an exact pixel box (`render_to_box`)**
+
+<img src="https://raw.githubusercontent.com/daiki-moritake/mojivs/main/docs/images/feature_box.png" alt="Fit to a box" width="440">
 
 ## Installation
 
@@ -131,6 +147,26 @@ font.missing("辻鯛𠮷")       # -> list of unsupported clusters
 ```
 
 `\U000e0100` is variation selector VS17 (U+E0100); include it directly in the string.
+
+### Command line (CLI)
+
+Installing the package provides a `mojivs` command (`python -m mojivs` works too).
+
+```bash
+# Type variation selectors as \U... escapes with --escape
+mojivs render '辻\U000e0100鯛' --font Gothic.otf --escape -o out.png --size 96
+
+# Vertical writing + tate-chu-yoko; SVG is inferred from the extension
+mojivs render '平成31年' --font Gothic.otf --direction vertical --tate-chu-yoko 2 -o out.svg
+
+# Inspect font coverage
+mojivs supports '辻鯛テ体' --font Gothic.otf   # -> true
+mojivs missing  '辻鯛𠮷'   --font Gothic.otf   # unsupported clusters, one per line
+```
+
+Key options: `--size` `--color` `--stroke` `--stroke-width` `--background`
+`--direction` `--align` `--orientation` `--tate-chu-yoko` `--backend`
+(`cairo`|`freetype`) `--on-missing` (`raise`|`skip`). See `mojivs render --help`.
 
 ### Output formats and layout
 

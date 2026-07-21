@@ -23,6 +23,8 @@ htmlcov/
 
 # Local render outputs (examples/basic.py regenerates these)
 *.png
+# ...but the committed README images (docs/generate_images.py regenerates them).
+!docs/images/*.png
 
 # Sample fonts: only HaranoAjiGothic-Medium.otf (used by tests/examples) is
 # tracked. The other Harano Aji faces are 75MB combined and are downloadable
