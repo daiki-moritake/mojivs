@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-21
+
+First release published to PyPI (installable with pip or uv).
+
 ### Added
+- FreeType rasterizer backend (`backend="freetype"`), a cairo-free, faster fill
+  path; stroked text automatically falls back to cairo.
+- Glyph outline caching in `IVSFont`, roughly 2.4× faster rendering on repeated
+  glyphs.
 - `py.typed` marker (PEP 561) so downstream type checkers pick up the package's
   inline type hints.
 - Automated PyPI release via GitHub Actions Trusted Publishing (OIDC),
-  `.github/workflows/publish.yml`, documented in `RELEASING.md`. The package
-  then installs with pip or uv (`uv add mojivs`).
+  `.github/workflows/publish.yml`, documented in `RELEASING.md`.
 - `scripts/update_ivd.py` to re-fetch the bundled Unicode IVD table, with the
   source, version, and license recorded in `scripts/README.md`.
 - Test coverage measurement (`pytest-cov`) and an expanded CI matrix
@@ -21,21 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status badges in the README.
 
 ### Changed
-- Only `HaranoAjiGothic-Medium.otf` is tracked in `fonts/`; the other Harano Aji
-  faces (~70 MB) are no longer committed and are downloadable from upstream.
-
-## [0.3.0]
-
-### Added
-- FreeType rasterizer backend (`backend="freetype"`), a cairo-free, faster fill
-  path; stroked text automatically falls back to cairo.
-- Glyph outline caching in `IVSFont`, roughly 2.4× faster rendering on repeated
-  glyphs.
-
-### Changed
 - `cairo` (pycairo) is now an optional dependency (`mojivs[cairo]`) instead of a
   hard requirement; install at least one rasterizer backend.
 - Introduced `ruff` (lint + format) and `pyright` (type checking), enforced in CI.
+- Only `HaranoAjiGothic-Medium.otf` is tracked in `fonts/`; the other Harano Aji
+  faces (~70 MB) are no longer committed and are downloadable from upstream.
 
 ## [0.2.0]
 
