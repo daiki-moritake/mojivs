@@ -60,6 +60,7 @@ include = [
     "README.en.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
+    "RELEASING.md",
     "LICENSE",
 ]
 

@@ -49,6 +49,13 @@ pip install mojivs[freetype]          # FreeType backend (cairo-free, faster)
 pip install mojivs[cairo,freetype]    # both
 ```
 
+[uv](https://docs.astral.sh/uv/) works the same way (it installs from PyPI):
+
+```bash
+uv pip install "mojivs[cairo]"        # into an existing environment
+uv add "mojivs[cairo]"                # add to a uv-managed project
+```
+
 - **cairo** — required for the default backend and for stroked text. `pycairo`
   needs the native cairo library:
 

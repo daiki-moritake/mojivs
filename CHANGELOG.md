@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `py.typed` marker (PEP 561) so downstream type checkers pick up the package's
   inline type hints.
+- Automated PyPI release via GitHub Actions Trusted Publishing (OIDC),
+  `.github/workflows/publish.yml`, documented in `RELEASING.md`. The package
+  then installs with pip or uv (`uv add mojivs`).
 - `scripts/update_ivd.py` to re-fetch the bundled Unicode IVD table, with the
   source, version, and license recorded in `scripts/README.md`.
 - Test coverage measurement (`pytest-cov`) and an expanded CI matrix
