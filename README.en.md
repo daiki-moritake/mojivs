@@ -11,11 +11,14 @@
 ![Rendering 辻+VS17: Pillow BASIC ignores it, while Pillow+libraqm and mojivs render it correctly](https://raw.githubusercontent.com/daiki-moritake/mojivs/main/docs/images/hero_ivs.png)
 
 Render Japanese text to images. In particular, it resolves **IVS (Ideographic
-Variation Sequences / 異体字)** through the Adobe-Japan1 IVD and maps them to the
-font's CID glyphs. Pillow's `ImageFont` ignores variation selectors in its
-default (BASIC) layout; with libraqm/HarfBuzz it can shape them, but relies on
-the font's UVS cmap. **mojivs resolves IVS with fonttools alone — no
-libraqm/HarfBuzz required.**
+Variation Sequences / 異体字)** and **SVS (Standardized Variation Sequences)**
+straight from **the font's own cmap format-14 (UVS) subtable**. Because that is
+the standard OpenType mechanism, it works beyond Adobe-Japan1 — including other
+IVD collections such as Hanyo-Denshi / Moji_Joho, and both CID-keyed and
+name-keyed fonts (falling back to the Adobe-Japan1 IVD when a font ships no
+format-14 table). Pillow's `ImageFont` ignores variation selectors in its
+default (BASIC) layout; with libraqm/HarfBuzz it can shape them. **mojivs
+resolves IVS/SVS with fonttools alone — no libraqm/HarfBuzz required.**
 
 For example, variant forms of 辻, 葛, 髙, 﨑, 鯛 render with the correct glyph shape.
 
@@ -26,8 +29,9 @@ For example, variant forms of 辻, 葛, 髙, 﨑, 鯛 render with the correct gl
 
 ## Features
 
-- **IVS applied to glyph shape** — base character + variation selector resolved
-  to an Adobe-Japan1 CID.
+- **IVS / SVS applied to glyph shape** — resolved from the font's own cmap
+  format-14 (UVS) subtable, so any font works — not just Adobe-Japan1 (falls
+  back to the Adobe-Japan1 IVD when a font has no format-14 table).
 - **Font parsed once** — the cmap, glyph set, and metrics are cached instead of
   being rebuilt on every render.
 - **Horizontal / vertical / multi-line** — split rows/columns on `\n`; vertical
@@ -233,13 +237,15 @@ The rasterizing methods (`render` / `render_to_box`) also accept `backend`
 
 ### `mojivs.ivs` (the render-independent resolver layer)
 
-A pure layer that resolves IVS → CID without cairo/Pillow.
+A pure layer for cluster splitting (IVS/SVS selectors) and the Adobe-Japan1 IVD
+fallback, without cairo/Pillow. Primary glyph resolution lives in `font.py`,
+which reads the font's format-14 subtable.
 
 ```python
 from mojivs import ivs
 
-ivs.is_variation_selector("\U000e0100")   # -> True
-ivs.cid_glyph_name("辻", ["\U000e0100"])   # -> "cid03056"
+ivs.is_variation_selector("\U000e0100")   # -> True (SVS U+FE00–FE0F is True too)
+ivs.cid_glyph_name("辻", ["\U000e0100"])   # -> "cid03056" (Adobe-Japan1 fallback)
 list(ivs.iter_clusters("A辻\U000e0100"))   # -> [('A', []), ('辻', ['\U000e0100'])]
 ```
 
@@ -249,8 +255,8 @@ A lightweight resolver layer, with layout → per-format output built on top.
 
 ```
 mojivs/
-├─ ivs.py       … IVS → Adobe-Japan1 CID resolution (stdlib + fonttools only)
-├─ font.py      … IVSFont: font loading and caching
+├─ ivs.py       … cluster splitting (IVS/SVS) + Adobe-Japan1 IVD fallback (stdlib only)
+├─ font.py      … IVSFont: font loading, format-14 (UVS) glyph resolution, caching
 ├─ shaping.py   … shape(): text → placed glyphs (horizontal/vertical/multi-line)
 ├─ render.py    … rasterization via cairo/Pillow (PNG)
 ├─ render_ft.py … FreeType backend (optional; freetype-py; backend="freetype")
@@ -295,8 +301,11 @@ four checks. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
   supported.
 - `tate_chu_yoko` only targets runs of halfwidth ASCII digits (mixed cases like
   `No.` are out of scope).
-- Only the Adobe-Japan1 IVD collection is supported (Hanyo-Denshi / Moji_Joho are
-  not yet resolved).
+- Variants are resolved from the font's cmap format-14 (UVS) subtable, so any
+  font with one works across all collections (Adobe-Japan1, Hanyo-Denshi,
+  Moji_Joho, …) and SVS. A font that has **no format-14 table and is not
+  Adobe-Japan1 CID-named** cannot resolve variants (and, of course, nothing can
+  render a glyph the font does not contain).
 - No automatic line breaking (word wrap); only explicit `\n`.
 - `render_to_box` supports a single horizontal line only.
 

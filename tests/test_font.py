@@ -8,7 +8,9 @@ from mojivs import IVSFont, MojivsError, UnsupportedCharacterError
 TSUJI = "辻"
 VS17 = "\U000e0100"
 VS18 = "\U000e0101"
-PUA = "\ue000"  # Private Use Area: no glyph in a normal font.
+FUGU = "侮"  # 侮: carries an SVS variant in the bundled font's format-14.
+VS1 = "︀"  # Standardized variation selector (SVS).
+PUA = ""  # Private Use Area: no glyph in a normal font.
 
 
 def test_supports_plain_char(font):
@@ -27,6 +29,28 @@ def test_ivs_selects_a_different_glyph(font):
     assert plain == "cid08267"
     variant = font.glyph_name(TSUJI, [VS17])
     assert variant == "cid03056"
+    assert variant != plain
+
+
+def test_ivs_resolved_via_font_uvs_not_only_ivd(font):
+    # The format-14 subtable is the source of truth: 辻+VS17 resolves even
+    # though we no longer consult the IVD first.
+    assert font.glyph_name(TSUJI, [VS17]) == "cid03056"
+
+
+def test_default_uvs_selector_falls_back_to_base_glyph(font):
+    # 辻+VS18 is a *default* UVS record in this font (glyph name None), which
+    # means "render the base's usual glyph" — i.e. the plain cmap glyph.
+    assert font.glyph_name(TSUJI, [VS18]) == font.glyph_name(TSUJI)
+    assert font.glyph_name(TSUJI, [VS18]) == "cid08267"
+
+
+def test_svs_selects_a_different_glyph(font):
+    # SVS (U+FE00–U+FE0F) is now honoured via the font's format-14 subtable:
+    # 侮+VS1 maps to a distinct glyph, resolved without any Adobe-Japan1 IVD hit.
+    plain = font.glyph_name(FUGU)
+    variant = font.glyph_name(FUGU, [VS1])
+    assert variant == "cid13382"
     assert variant != plain
 
 

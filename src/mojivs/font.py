@@ -62,6 +62,21 @@ class IVSFont:
                 "characters to glyphs for this font"
             )
         self._cmap: dict[int, str] = cmap
+
+        # The font's own cmap format-14 (Unicode Variation Sequences) subtable is
+        # the authoritative, self-describing source for variation sequences: it
+        # works for any font (CID- or name-keyed), any IVD collection, and SVS —
+        # not just Adobe-Japan1. Flatten every format-14 subtable once into
+        # ``{selector_codepoint: {base_codepoint: glyph_name_or_None}}``. A value
+        # of ``None`` is a *default* UVS record (render the base's usual glyph).
+        self._uvs: dict[int, dict[int, str | None]] = {}
+        for sub in self._ttfont["cmap"].tables:
+            if sub.format == 14:
+                for sel_cp, entries in sub.uvsDict.items():
+                    table = self._uvs.setdefault(sel_cp, {})
+                    for base_cp, glyph in entries:
+                        table[base_cp] = glyph
+
         self._hmtx: Any = self._ttfont["hmtx"]
         self._vmtx: Any = self._ttfont["vmtx"] if "vmtx" in self._ttfont else None
         self._vorg: Any = self._ttfont["VORG"] if "VORG" in self._ttfont else None
@@ -92,16 +107,30 @@ class IVSFont:
 
         Resolution order:
 
-        1. If selectors are present and the IVS maps to an Adobe-Japan1 CID that
-           exists in this font, use that CID glyph.
-        2. Otherwise fall back to the plain Unicode cmap mapping for the base.
-        3. Return ``None`` if neither yields a glyph in this font.
+        1. The font's own cmap format-14 (UVS) subtable — works for any font,
+           any IVD collection, and SVS. A non-default record names the glyph
+           directly; a default record (``None``) selects the base's plain glyph.
+        2. Adobe-Japan1 IVD fallback: if the sequence maps to an Adobe-Japan1
+           CID that exists in this font (helps CID fonts lacking format-14).
+        3. The plain Unicode cmap mapping for the base.
+        4. ``None`` if none of these yields a glyph in this font.
         """
         selectors = selectors or []
+        base_cp = ord(base)
+
+        for selector in selectors:
+            table = self._uvs.get(ord(selector))
+            if table is not None and base_cp in table:
+                glyph = table[base_cp]
+                if glyph is None:  # default UVS: use the base's usual glyph
+                    return self._cmap.get(base_cp)
+                if glyph in self._glyph_names:
+                    return glyph
+
         cid = ivs.cid_glyph_name(base, selectors)
         if cid is not None and cid in self._glyph_names:
             return cid
-        return self._cmap.get(ord(base))
+        return self._cmap.get(base_cp)
 
     def missing(self, text: str) -> list[str]:
         """Return the clusters in ``text`` this font cannot render, in order."""
