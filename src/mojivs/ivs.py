@@ -1,9 +1,21 @@
-"""IVS (Ideographic Variation Sequence) resolution — the pure, dependency-light core.
+"""Variation-sequence clustering and the Adobe-Japan1 IVD fallback.
 
-This layer knows nothing about rendering. It parses the Unicode IVD
-(Ideographic Variation Database) and answers a single question: given a base
-character plus its trailing variation selector(s), which Adobe-Japan1 CID does
-that sequence map to?
+This layer knows nothing about rendering. It splits text into base-character
+clusters (a base plus any trailing variation selectors) and provides the legacy
+Adobe-Japan1 lookup: given a base character plus its variation selector(s),
+which Adobe-Japan1 CID does that sequence map to?
+
+Two selector families are recognised when clustering:
+
+* **IVS** (Ideographic Variation Sequence) selectors U+E0100–U+E01EF (VS17–256),
+  used by the Unicode IVD.
+* **SVS** (Standardized Variation Sequence) selectors U+FE00–U+FE0F (VS1–16),
+  used by StandardizedVariants and emoji presentation sequences.
+
+The authoritative resolution is now the font's own cmap format-14 subtable (see
+:mod:`mojivs.font`); :func:`cid_glyph_name` here is only the Adobe-Japan1
+fallback for CID-keyed fonts that ship no format-14 table. The Adobe-Japan1 IVD
+only uses the IVS range, so SVS lookups naturally miss it and defer to the font.
 
 The only runtime dependency here is fontTools (for the caller-supplied cmap);
 this module itself imports nothing beyond the standard library.
@@ -15,19 +27,32 @@ import functools
 from collections.abc import Iterator
 from importlib import resources
 
-# Range of Unicode variation selectors used by the IVD (VS17–VS256).
-# Standardized selectors (U+FE00–FE0F) are intentionally excluded because the
-# Adobe-Japan1 IVD collection only uses this range.
+# IVS variation selectors used by the Unicode IVD (VS17–VS256).
 VARIATION_SELECTOR_START = 0xE0100
 VARIATION_SELECTOR_END = 0xE01EF
+
+# Standardized variation selectors (VS1–VS16): StandardizedVariants and emoji
+# presentation sequences. The IVD does not use these, but a font's cmap
+# format-14 subtable can, so they are recognised when clustering.
+SVS_SELECTOR_START = 0xFE00
+SVS_SELECTOR_END = 0xFE0F
 
 #: Collection name matched against column 2 of the IVD file.
 ADOBE_JAPAN1 = "Adobe-Japan1"
 
 
 def is_variation_selector(char: str) -> bool:
-    """Return True if ``char`` is an IVS variation selector (U+E0100–U+E01EF)."""
-    return VARIATION_SELECTOR_START <= ord(char) <= VARIATION_SELECTOR_END
+    """Return True if ``char`` is a variation selector.
+
+    Covers both IVS selectors (U+E0100–U+E01EF, VS17–256) and SVS selectors
+    (U+FE00–U+FE0F, VS1–16). Either family attaches to the preceding base
+    character when clustering.
+    """
+    cp = ord(char)
+    return (
+        VARIATION_SELECTOR_START <= cp <= VARIATION_SELECTOR_END
+        or SVS_SELECTOR_START <= cp <= SVS_SELECTOR_END
+    )
 
 
 def iter_clusters(text: str) -> Iterator[tuple[str, list[str]]]:
