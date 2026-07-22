@@ -5,6 +5,7 @@ Run from anywhere after ``pip install -e ".[dev]"`` (needs the cairo backend):
     python docs/generate_images.py
 
 Produces:
+  hero_box.png       Same text fitted into three differently shaped boxes.
   hero_ivs.png       辻+VS17 across Pillow BASIC / Pillow+libraqm / mojivs.
   feature_outline.png  Stroked text on a dark background.
   feature_vertical.png Vertical writing with tate-chu-yoko.
@@ -129,6 +130,62 @@ def make_hero(font: IVSFont) -> None:
     img.convert("RGB").save(OUT / "hero_ivs.png")
 
 
+def make_box_hero(font: IVSFont) -> None:
+    """The headline feature: fit one line of text into an exact pixel box.
+
+    The same text is rendered into three boxes of different sizes. mojivs scales
+    the line to the box height and then fills the width — spreading the letters
+    evenly when there is slack, compressing them when the text is too wide — so
+    every box is filled edge to edge, never clipped and never leaving a gap.
+    """
+    text = "枠にフィット"
+    gutter = 12  # gap between the drawn frame and the text box
+    margin = 40
+    title_font = ImageFont.truetype(str(FONT_PATH), 30)
+    caption_font = ImageFont.truetype(str(FONT_PATH), 22)
+
+    title = "1行のテキストを、指定した枠にぴったり充填"
+    rows = [
+        ((560, 96), "広い枠 → 字間を均等に配って充填"),
+        ((300, 96), "ちょうどの枠 → 自然な字送り"),
+        ((176, 96), "狭い枠 → 字を圧縮して収める"),
+    ]
+
+    measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    content_w = max(
+        max(bw for (bw, _), _ in rows) + gutter * 2,
+        int(measure.textlength(title, font=title_font)),
+        *(int(measure.textlength(cap, font=caption_font)) for _, cap in rows),
+    )
+    width = margin * 2 + content_w
+
+    title_y = margin
+    row_top = title_y + 52
+    row_gap = 30
+    caption_h = 30
+
+    height = row_top
+    for (_, bh), _ in rows:
+        height += caption_h + gutter * 2 + bh + row_gap
+    height += margin - row_gap
+
+    img = Image.new("RGBA", (width, height), BG)
+    draw = ImageDraw.Draw(img)
+    draw.text((margin, title_y), title, font=title_font, fill=INK)
+
+    y = row_top
+    for (bw, bh), caption in rows:
+        draw.text((margin, y), caption, font=caption_font, fill=MUTED)
+        y += caption_h
+        frame = (margin, y, margin + bw + gutter * 2, y + bh + gutter * 2)
+        draw.rounded_rectangle(frame, radius=10, outline=LINE, width=2, fill="#fafafa")
+        glyphs = font.render_to_box(text, (bw, bh), color=INK)
+        img.alpha_composite(glyphs, (margin + gutter, y + gutter))
+        y += gutter * 2 + bh + row_gap
+
+    img.convert("RGB").save(OUT / "hero_box.png")
+
+
 def make_features(font: IVSFont) -> None:
     font.render(
         "袋文字・縁取り",
@@ -161,6 +218,7 @@ def make_features(font: IVSFont) -> None:
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     font = IVSFont(FONT_PATH)
+    make_box_hero(font)
     make_hero(font)
     make_features(font)
     for path in sorted(OUT.glob("*.png")):
