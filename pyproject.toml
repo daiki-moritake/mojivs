@@ -23,20 +23,21 @@ classifiers = [
 dependencies = [
     "fonttools>=4.0",
     "pillow>=9.0",
-    "numpy>=1.21",
 ]
 
 [project.optional-dependencies]
-# Rasterizer backends — install at least one. ``cairo`` powers the default
-# backend (and all stroked text); ``freetype`` is the faster, cairo-free path.
+# The default 'builtin' rasterizer needs nothing beyond the core deps above.
+# These extras are optional accelerators: ``cairo`` is faster and adds stroked
+# text; ``freetype`` is the fastest fill path (and pulls numpy for compositing).
 cairo = ["pycairo>=1.20"]
-freetype = ["freetype-py>=2.3"]
+freetype = ["freetype-py>=2.3", "numpy>=1.21"]
 pdf = ["reportlab>=4.0"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "pycairo>=1.20",
     "freetype-py>=2.3",
+    "numpy>=1.21",
     "reportlab>=4.0",
     "ruff>=0.6",
     "pyright>=1.1.380",

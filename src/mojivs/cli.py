@@ -130,9 +130,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     render.add_argument(
         "--backend",
-        choices=("cairo", "freetype"),
-        default="cairo",
-        help="Rasterizer backend for PNG (default: cairo).",
+        choices=("builtin", "cairo", "freetype"),
+        default="builtin",
+        help="Rasterizer backend for PNG (default: builtin, no extra deps).",
     )
     render.add_argument(
         "--on-missing",

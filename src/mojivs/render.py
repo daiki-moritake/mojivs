@@ -10,22 +10,25 @@ points are provided:
   ``(width, height)`` pixel box, compressing when too wide and justifying
   (spreading the characters) when too narrow.
 
-Both accept ``backend="cairo"`` (default) or ``backend="freetype"``. cairo is
-imported lazily so the freetype-only install needs no pycairo; the cairo path
-raises a clear error if pycairo is missing (see :func:`_require_cairo`).
+The default ``backend="builtin"`` is a pure-Python + Pillow rasterizer that
+needs no numpy, cairo or freetype (see :mod:`mojivs.render_builtin`), so a bare
+``pip install mojivs`` can render filled text. ``backend="cairo"`` and
+``backend="freetype"`` are optional accelerators; cairo also handles all stroked
+text, and any backend automatically routes to cairo when a stroke is requested.
+Optional backends are imported lazily so a bare install needs none of them.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
-import numpy as np
 from fontTools.misc.transform import Transform
 from fontTools.pens.basePen import BasePen
 from fontTools.pens.recordingPen import replayRecording
 from PIL import Image
 
 from .colors import RGBA, Color, to_rgba
+from .render_builtin import rasterize_builtin
 from .render_ft import rasterize_ft
 from .shaping import Align, Direction, Orientation, PlacedGlyph, shape_for_output
 
@@ -41,10 +44,12 @@ else:
     except ImportError:  # pragma: no cover - exercised only without pycairo
         cairo = None
 
-# Rasterizer backend selector. ``"cairo"`` (default) uses the built-in cairo
-# path; ``"freetype"`` uses the optional freetype-py backend (see render_ft),
-# which is faster but falls back to cairo whenever a stroke is requested.
-Backend = Literal["cairo", "freetype"]
+# Rasterizer backend selector. ``"builtin"`` (default) is the dependency-free
+# pure-Python path (see render_builtin); ``"cairo"`` and ``"freetype"`` are
+# optional accelerators. Only cairo can stroke, so builtin/freetype fall back to
+# cairo whenever a stroke is requested.
+Backend = Literal["builtin", "cairo", "freetype"]
+_BACKENDS = ("builtin", "cairo", "freetype")
 
 
 def _require_cairo() -> None:
@@ -93,36 +98,17 @@ class _CairoPen(BasePen):
 def _surface_to_image(surface: Any) -> Image.Image:
     """Convert a cairo ARGB32 surface to a straight-alpha RGBA Pillow image.
 
-    Cairo stores ARGB32 as premultiplied BGRA; this un-premultiplies so that
-    anti-aliased edges keep their true color instead of darkening.
-
-    Only partially transparent pixels (``0 < a < 255``) actually need dividing:
-    opaque pixels already hold their true color and fully transparent pixels are
-    zero. Text ink is sparse, so restricting the float division to those edge
-    pixels avoids converting the whole canvas to float.
+    Cairo stores ARGB32 as premultiplied BGRA in native byte order. Pillow's
+    ``"BGRa"`` raw decoder both reorders the channels into RGBA and
+    un-premultiplies them, so anti-aliased edges keep their true color instead of
+    darkening — and it needs no numpy. ``stride`` is passed so any per-row
+    padding cairo added is skipped.
     """
     width = surface.get_width()
     height = surface.get_height()
     stride = surface.get_stride()
-    bgra = np.frombuffer(surface.get_data(), np.uint8).reshape(height, stride // 4, 4)[:, :width, :]
-
-    # Reorder cairo's BGRA into straight-alpha RGBA (channels only; values fixed
-    # up below where premultiplication actually darkened them).
-    out = np.empty((height, width, 4), np.uint8)
-    out[..., 0] = bgra[..., 2]  # R
-    out[..., 1] = bgra[..., 1]  # G
-    out[..., 2] = bgra[..., 0]  # B
-    a = bgra[..., 3]
-    out[..., 3] = a
-
-    edge = np.nonzero((a > 0) & (a < 255))
-    if edge[0].size:
-        scale = 255.0 / a[edge].astype(np.float32)
-        for c in range(3):
-            chan = out[..., c][edge].astype(np.float32) * scale
-            out[..., c][edge] = np.clip(chan, 0, 255).astype(np.uint8)
-
-    return Image.fromarray(out)
+    data = bytes(surface.get_data())
+    return Image.frombuffer("RGBA", (width, height), data, "raw", "BGRa", stride, 1)
 
 
 def _rasterize(
@@ -162,6 +148,41 @@ def _rasterize(
     return _surface_to_image(surface)
 
 
+def _rasterize_dispatch(
+    font: IVSFont,
+    glyphs,
+    width: int,
+    height: int,
+    *,
+    backend: Backend,
+    fill: RGBA,
+    stroke: RGBA,
+    stroke_width: float,
+    background: RGBA,
+) -> Image.Image:
+    """Route placed glyphs to the selected backend, returning an RGBA image.
+
+    Only cairo can stroke, so a requested stroke always uses the cairo path
+    regardless of ``backend``; unstroked fills use the chosen backend directly.
+    """
+    if not _stroke_active(stroke, stroke_width):
+        if backend == "builtin":
+            return rasterize_builtin(font, glyphs, width, height, fill=fill, background=background)
+        if backend == "freetype":
+            return rasterize_ft(font, glyphs, width, height, fill=fill, background=background)
+
+    return _rasterize(
+        font,
+        glyphs,
+        width,
+        height,
+        fill=fill,
+        stroke=stroke,
+        stroke_width=stroke_width,
+        background=background,
+    )
+
+
 def render(
     font: IVSFont,
     text: str,
@@ -179,7 +200,7 @@ def render(
     stroke_width: float = 0.0,
     background: Color = None,
     on_missing: str = "raise",
-    backend: Backend = "cairo",
+    backend: Backend = "builtin",
 ) -> Image.Image:
     """Render ``text`` to an RGBA image using the font's natural metrics.
 
@@ -202,16 +223,17 @@ def render(
         letter_spacing: Extra space between characters, in pixels.
         padding: Transparent padding around the text, in pixels.
         on_missing: ``"raise"`` (default) or ``"skip"`` for unsupported clusters.
-        backend: Rasterizer to use. ``"cairo"`` (default) or ``"freetype"``
-            (faster, no system cairo needed; requires ``mojivs[freetype]``).
-            The ``"freetype"`` backend only fills, so it falls back to cairo
-            automatically whenever a stroke is requested.
+        backend: Rasterizer to use. ``"builtin"`` (default) is the dependency-free
+            pure-Python path. ``"cairo"`` (requires ``mojivs[cairo]``) and
+            ``"freetype"`` (requires ``mojivs[freetype]``) are optional
+            accelerators. Only cairo strokes, so ``"builtin"`` and ``"freetype"``
+            fall back to cairo automatically whenever a stroke is requested.
 
     Returns:
         A :class:`PIL.Image.Image` in ``RGBA`` mode.
     """
-    if backend not in ("cairo", "freetype"):
-        raise ValueError(f"backend must be 'cairo' or 'freetype', got {backend!r}")
+    if backend not in _BACKENDS:
+        raise ValueError(f"backend must be one of {_BACKENDS}, got {backend!r}")
 
     shaped = shape_for_output(
         font,
@@ -232,21 +254,12 @@ def render(
     stroke_rgba = to_rgba(stroke)
     background_rgba = to_rgba(background)
 
-    if backend == "freetype" and not _stroke_active(stroke_rgba, stroke_width):
-        return rasterize_ft(
-            font,
-            shaped.glyphs,
-            shaped.width,
-            shaped.height,
-            fill=fill,
-            background=background_rgba,
-        )
-
-    return _rasterize(
+    return _rasterize_dispatch(
         font,
         shaped.glyphs,
         shaped.width,
         shaped.height,
+        backend=backend,
         fill=fill,
         stroke=stroke_rgba,
         stroke_width=stroke_width,
@@ -264,7 +277,7 @@ def render_to_box(
     stroke_width: float = 0.0,
     background: Color = None,
     on_missing: str = "raise",
-    backend: Backend = "cairo",
+    backend: Backend = "builtin",
 ) -> Image.Image:
     """Render a single horizontal line fitted into ``box = (width, height)`` px.
 
@@ -275,11 +288,12 @@ def render_to_box(
     This is a horizontal single-line helper only. For vertical writing or
     multiple lines, use :func:`render` (which sizes the canvas to the content).
 
-    ``backend`` selects the rasterizer as in :func:`render`: ``"cairo"``
-    (default) or ``"freetype"`` (falls back to cairo when a stroke is drawn).
+    ``backend`` selects the rasterizer as in :func:`render`: ``"builtin"``
+    (default), ``"cairo"`` or ``"freetype"`` (both fall back to cairo when a
+    stroke is drawn).
     """
-    if backend not in ("cairo", "freetype"):
-        raise ValueError(f"backend must be 'cairo' or 'freetype', got {backend!r}")
+    if backend not in _BACKENDS:
+        raise ValueError(f"backend must be one of {_BACKENDS}, got {backend!r}")
     if "\n" in text:
         raise ValueError(
             "render_to_box renders a single line; newlines are not supported. "
@@ -317,14 +331,12 @@ def render_to_box(
     stroke_rgba = to_rgba(stroke)
     background_rgba = to_rgba(background)
 
-    if backend == "freetype" and not _stroke_active(stroke_rgba, stroke_width):
-        return rasterize_ft(font, placed, box_w, box_h, fill=fill, background=background_rgba)
-
-    return _rasterize(
+    return _rasterize_dispatch(
         font,
         placed,
         box_w,
         box_h,
+        backend=backend,
         fill=fill,
         stroke=stroke_rgba,
         stroke_width=stroke_width,
