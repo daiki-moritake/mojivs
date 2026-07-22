@@ -70,7 +70,8 @@ class IVSFont:
         # ``{selector_codepoint: {base_codepoint: glyph_name_or_None}}``. A value
         # of ``None`` is a *default* UVS record (render the base's usual glyph).
         self._uvs: dict[int, dict[int, str | None]] = {}
-        for sub in self._ttfont["cmap"].tables:
+        cmap_table: Any = self._ttfont["cmap"]
+        for sub in cmap_table.tables:
             if sub.format == 14:
                 for sel_cp, entries in sub.uvsDict.items():
                     table = self._uvs.setdefault(sel_cp, {})
