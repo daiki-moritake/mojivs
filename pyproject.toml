@@ -100,3 +100,28 @@ venv = ".venv"
 pythonVersion = "3.9"
 typeCheckingMode = "basic"
 reportMissingTypeStubs = false
+
+[tool.semantic_release]
+# Automated releases (see .github/workflows/publish.yml and RELEASING.md). On a
+# push to main, python-semantic-release parses the Conventional Commits since the
+# last tag, computes the next version, bumps it in the files below, updates the
+# changelog, tags, and creates a GitHub Release — which the same workflow then
+# publishes to PyPI.
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["src/mojivs/__init__.py:__version__"]
+tag_format = "v{version}"
+build_command = "python -m build"
+commit_message = "chore(release): {version} [skip ci]"
+# Stay on 0.x semantics: a feat bumps the minor (0.3.0 -> 0.4.0) and a breaking
+# change also stays within 0.x rather than jumping to 1.0.0 until we opt in.
+allow_zero_version = true
+major_on_zero = false
+
+[tool.semantic_release.branches.main]
+match = "main"
+
+[tool.semantic_release.changelog]
+# Insert each new release above the existing history at the marker in
+# CHANGELOG.md, preserving the hand-written entries already there.
+mode = "update"
+insertion_flag = "<!-- version list -->"

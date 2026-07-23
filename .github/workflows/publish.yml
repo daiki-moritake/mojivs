@@ -1,23 +1,113 @@
 name: Publish to PyPI
 
-# Publishes to PyPI when a GitHub Release is published. Uses PyPI Trusted
-# Publishing (OIDC) — no API token or secret is stored in the repo. See
-# RELEASING.md for the one-time PyPI-side setup.
+# Automated release + publish. On every push to main (i.e. a merge), this:
+#   1. runs the quality gate (lint / type check / tests),
+#   2. lets python-semantic-release compute the next version from the
+#      Conventional Commits since the last tag, bump it, update the changelog,
+#      tag, and create a GitHub Release,
+#   3. builds and publishes to PyPI — but only when step 2 actually cut a release.
+#
+# Publishing uses PyPI Trusted Publishing (OIDC): no API token or secret is
+# stored in the repo. The trusted publisher on PyPI is bound to THIS workflow
+# filename (publish.yml) and the `pypi` environment, so keep both as-is. See
+# RELEASING.md for the one-time PyPI-side and branch-protection setup.
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
+  workflow_dispatch:
 
-permissions: {}
+# Least privilege by default; jobs widen only what they need.
+permissions:
+  contents: read
 
 jobs:
-  build:
-    name: Build distribution
+  # Quality gate — nothing gets released if this fails. PRs are already checked
+  # by ci.yml, but this guards direct pushes too, since a PyPI publish is
+  # irreversible.
+  test:
+    name: Quality gate
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install cairo
+        run: sudo apt-get update && sudo apt-get install -y libcairo2-dev pkg-config
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package and dev tools
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: .venv/bin/ruff check src tests
+
+      - name: Format check (ruff)
+        run: .venv/bin/ruff format --check src tests
+
+      - name: Type check (pyright)
+        run: .venv/bin/pyright
+
+      - name: Tests (pytest)
+        run: .venv/bin/pytest -q
+
+  # Compute the version, bump files, update the changelog, tag, and create the
+  # GitHub Release. Pushes the version-bump commit back to main.
+  release:
+    name: Semantic release
+    needs: test
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-release-${{ github.ref_name }}
+      cancel-in-progress: false
+    permissions:
+      contents: write # push the version bump commit, tag, and create the release
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Checkout on the release branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0 # full history so commit parsing sees every tag
+
+      - name: Pin the branch to the workflow SHA
+        run: git reset --hard ${{ github.sha }}
+
+      - name: Python Semantic Release
+        id: release
+        uses: python-semantic-release/python-semantic-release@v10.6.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          build: false # the publish job builds from the tag instead
+          git_committer_name: "github-actions[bot]"
+          git_committer_email: "41898282+github-actions[bot]@users.noreply.github.com"
+
+  # Build the just-tagged version and upload it to PyPI via OIDC. Only runs when
+  # the release job actually produced a new release.
+  publish:
+    name: Publish to PyPI
+    needs: release
+    # NOTE: do not wrap this condition in ${{ }} — it would always be truthy.
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/mojivs/
+    permissions:
+      id-token: write # required for OIDC trusted publishing
+    steps:
+      - name: Checkout the released tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
 
       - uses: actions/setup-python@v5
         with:
@@ -28,26 +118,6 @@ jobs:
           python -m pip install --upgrade build twine
           python -m build
           python -m twine check dist/*
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-  publish:
-    name: Publish to PyPI
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/project/mojivs/
-    permissions:
-      id-token: write # required for OIDC trusted publishing
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
