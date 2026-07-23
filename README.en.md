@@ -64,11 +64,13 @@ forms of 辻, 葛, 髙, 﨑, 鯛 fill the box with the correct glyph shape.
   (`tate_chu_yoko`).
 - **Outline (stroke), background color, letter/line spacing, alignment**.
 - **PNG / SVG / PDF output** — multiple formats from one layout engine.
-- **Selectable backend** — cairo (default) or FreeType. `backend="freetype"` is
-  cairo-free and faster (it falls back to cairo automatically when stroking).
-- **Few dependencies** — the core is only `fonttools` / `pillow` / `numpy`. The
-  rasterizer (`pycairo` or `freetype-py`) and PDF output (`reportlab`) are all
-  optional extras.
+- **Selectable backend** — the default `builtin` backend is a dependency-free
+  pure-Python rasterizer. Switch to `backend="cairo"` / `backend="freetype"` for
+  speed (both fall back to cairo automatically when stroking).
+- **Very few dependencies** — the core is just `fonttools` + `pillow` (two
+  packages). A bare `pip install mojivs` already renders. `pycairo` /
+  `freetype-py` (plus numpy) are optional accelerators for speed and strokes, and
+  PDF output (`reportlab`) is an optional extra too.
 
 ## Gallery
 
@@ -86,22 +88,31 @@ forms of 辻, 葛, 髙, 﨑, 鯛 fill the box with the correct glyph shape.
 
 ## Installation
 
-Install **at least one** rasterizer backend:
+It works out of the box with no extras (it pulls only `fonttools` + `pillow`):
 
 ```bash
-pip install mojivs[cairo]             # default backend (also required for strokes)
-pip install mojivs[freetype]          # FreeType backend (cairo-free, faster)
+pip install mojivs                    # renders with the default builtin backend (no system libs)
+```
+
+Add an optional accelerator when you need one:
+
+```bash
+pip install mojivs[cairo]             # cairo backend (required for strokes)
+pip install mojivs[freetype]          # FreeType backend (fastest fill; bundles numpy)
 pip install mojivs[cairo,freetype]    # both
 ```
 
 [uv](https://docs.astral.sh/uv/) works the same way (it installs from PyPI):
 
 ```bash
-uv pip install "mojivs[cairo]"        # into an existing environment
-uv add "mojivs[cairo]"                # add to a uv-managed project
+uv pip install mojivs                 # into an existing environment
+uv add "mojivs[cairo]"                # add to a uv-managed project (with cairo)
 ```
 
-- **cairo** — required for the default backend and for stroked text. `pycairo`
+- **builtin (default)** — pure Python + Pillow. No C extensions or system
+  libraries; `pip install mojivs` alone renders fills and backgrounds, with
+  output nearly identical to cairo/freetype.
+- **cairo** — required for stroked text, and faster for fills too. `pycairo`
   needs the native cairo library:
 
   ```bash
@@ -111,12 +122,11 @@ uv add "mojivs[cairo]"                # add to a uv-managed project
   sudo apt-get install libcairo2-dev pkg-config
   ```
 
-- **freetype** — `freetype-py` ships self-contained wheels, so no system cairo
-  is needed.
+- **freetype** — the fastest fill path. `freetype-py` ships self-contained
+  wheels, so no system cairo is needed (numpy, used for compositing, comes along).
 
-> `pip install mojivs` with no extras installs no rasterizer. `import mojivs`
-> works, but the default `render()` uses the cairo backend — install
-> `mojivs[cairo]`, or use `backend="freetype"` with `mojivs[freetype]`.
+> Only cairo can stroke, so `backend="builtin"` / `"freetype"` fall back to cairo
+> automatically when a stroke is requested — which needs `mojivs[cairo]`.
 
 ```bash
 # Development (both backends + tests/type checking)
@@ -170,9 +180,9 @@ font.render("縦書きABC\n令和6年です", size=64, direction="vertical").sav
 #     tate_chu_yoko = max digit count).
 font.render("平成31年\n5月1日", size=64, direction="vertical", tate_chu_yoko=2).save("tcy.png")
 
-# 6. FreeType backend (optional, cairo-free and faster; requires mojivs[freetype]).
-#     Output is nearly identical to cairo; strokes fall back to cairo automatically.
-font.render("高速レンダリング", size=96, backend="freetype").save("ft.png")
+# 6. Backend selection (default is the dependency-free builtin; switch only for speed).
+#     Output is nearly identical across all three; strokes fall back to cairo automatically.
+font.render("高速レンダリング", size=96, backend="freetype").save("ft.png")  # needs mojivs[freetype]
 
 # Vector output (SVG needs no extra deps; PDF needs reportlab).
 open("out.svg", "w").write(font.to_svg("辻\U000e0100鯛", size=96))
@@ -227,7 +237,7 @@ mojivs missing  '辻鯛𠮷'   --font Gothic.otf   # unsupported clusters, one p
 
 Key options: `--size` `--color` `--stroke` `--stroke-width` `--background`
 `--direction` `--align` `--orientation` `--tate-chu-yoko` `--backend`
-(`cairo`|`freetype`) `--on-missing` (`raise`|`skip`). See `mojivs render --help`.
+(`builtin`|`cairo`|`freetype`) `--on-missing` (`raise`|`skip`). See `mojivs render --help`.
 
 ### Output formats and layout
 
@@ -241,9 +251,9 @@ Key options: `--size` `--color` `--stroke` `--stroke-width` `--background`
   `"upright"` (everything upright).
 - `tate_chu_yoko` (vertical): `0` disables it. `N` sets runs of up to N halfwidth
   digits upright and horizontal (tate-chu-yoko).
-- `backend` (`render` / `render_to_box` only): `"cairo"` (default) or
-  `"freetype"`. This chooses the rasterizer only; the layout is unchanged (not
-  applicable to SVG/PDF).
+- `backend` (`render` / `render_to_box` only): `"builtin"` (default —
+  dependency-free pure Python), `"cairo"`, or `"freetype"`. This chooses the
+  rasterizer only; the layout is unchanged (not applicable to SVG/PDF).
 
 ```python
 from mojivs import IVSFont
@@ -274,7 +284,7 @@ Common layout arguments: `size` / `direction` (`"horizontal"` | `"vertical"`) /
 `padding` / `orientation` (`"mixed"` | `"upright"`) / `tate_chu_yoko` (int).
 Common style arguments: `color` / `stroke` / `stroke_width` / `background`.
 The rasterizing methods (`render` / `render_to_box`) also accept `backend`
-(`"cairo"` default | `"freetype"`).
+(`"builtin"` default | `"cairo"` | `"freetype"`).
 
 | Method | Description |
 |---|---|
@@ -312,8 +322,9 @@ mojivs/
 ├─ ivs.py       … cluster splitting (IVS/SVS) + Adobe-Japan1 IVD fallback (stdlib only)
 ├─ font.py      … IVSFont: font loading, format-14 (UVS) glyph resolution, caching
 ├─ shaping.py   … shape(): text → placed glyphs (horizontal/vertical/multi-line)
-├─ render.py    … rasterization via cairo/Pillow (PNG)
-├─ render_ft.py … FreeType backend (optional; freetype-py; backend="freetype")
+├─ render.py    … backend dispatch + cairo rasterization (PNG)
+├─ render_builtin.py … default backend (pure Python + Pillow, no extra deps; backend="builtin")
+├─ render_ft.py … FreeType backend (optional; freetype-py + numpy; backend="freetype")
 ├─ export.py    … SVG (fonttools) / PDF (reportlab; optional) output
 ├─ colors.py    … color parsing
 └─ data/ivd.txt … Unicode IVD (bundled data)

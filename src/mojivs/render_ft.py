@@ -31,7 +31,6 @@ import ctypes
 import io
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 from PIL import Image
 
 from .colors import RGBA
@@ -39,12 +38,22 @@ from .colors import RGBA
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    import numpy as np
+
     from .shaping import PlacedGlyph
 
     # freetype-py ships no type stubs and builds its FT_* constants dynamically,
     # so give the type checker an opaque view instead of the real partial module.
     freetype: Any
 else:
+    # The freetype backend is an optional accelerator; numpy powers its
+    # compositing and rides along in the ``mojivs[freetype]`` extra. Both are
+    # imported lazily so a bare install (which has neither) can still import this
+    # module — ``_require_freetype`` reports whatever is missing.
+    try:
+        import numpy as np
+    except ImportError:  # pragma: no cover - exercised only without numpy
+        np = None
     try:
         import freetype
     except ImportError:  # pragma: no cover - exercised only without freetype-py
@@ -63,10 +72,10 @@ def _load_flags() -> int:
 
 
 def _require_freetype() -> None:
-    if freetype is None:
+    if freetype is None or np is None:
         raise RuntimeError(
-            "the 'freetype' backend requires freetype-py; install it with "
-            "'pip install mojivs[freetype]'"
+            "the 'freetype' backend requires freetype-py and numpy; install "
+            "them with 'pip install mojivs[freetype]'"
         )
 
 
