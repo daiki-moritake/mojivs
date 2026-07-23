@@ -28,7 +28,7 @@ from .ivs import is_variation_selector, iter_clusters
 from .render import render, render_to_box
 from .shaping import PlacedGlyph, ShapedText, is_upright_in_vertical, shape
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "IVSFont",

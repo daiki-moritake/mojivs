@@ -10,6 +10,48 @@ the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) style.
 
 <!-- version list -->
 
+## v0.4.0 (2026-07-23)
+
+### Bug Fixes
+
+- **docs**: ヒーロー画像と README の主張を正確化（Pillow+libraqm でも IVS は描ける）
+  ([`c24249d`](https://github.com/daiki-moritake/mojivs/commit/c24249d5e3b20c0ce23049aeea3668cbc7dcf0e6))
+
+- **types**: Cmap テーブルを Any 経由で参照し pyright エラーを解消
+  ([`17e8b64`](https://github.com/daiki-moritake/mojivs/commit/17e8b64ddb47142a2b55f62ec2fa94d179e15cb9))
+
+### Code Style
+
+- ヒーロー生成スクリプトの長い行を折り返し（ruff E501）
+  ([`603655f`](https://github.com/daiki-moritake/mojivs/commit/603655f007f4e2674cff8b28e81fa07b22937962))
+
+### Continuous Integration
+
+- Main へのマージで自動リリース(python-semantic-release)
+  ([`c6e0e44`](https://github.com/daiki-moritake/mojivs/commit/c6e0e44a7d9d197f44a6481a6f62abb0a0e68143))
+
+### Documentation
+
+- 「枠にフォントを綺麗に埋める」を README の主役に
+  ([`f199998`](https://github.com/daiki-moritake/mojivs/commit/f199998722e8200d0e91f6f50156e78fb658b1c0))
+
+### Features
+
+- CLI・README ビジュアル・GitHub メタデータで発見性を強化
+  ([`bf09779`](https://github.com/daiki-moritake/mojivs/commit/bf09779b15c363382611074431412457ef2c7e42))
+
+- Cmap format-14(UVS) で IVS/SVS を解決し任意フォントに対応
+  ([`4203406`](https://github.com/daiki-moritake/mojivs/commit/42034066389d5c58aeef78c5b40849e84a11710a))
+
+- **render**: 依存ゼロの純Python builtin バックエンドを追加し既定に
+  ([`14a85d5`](https://github.com/daiki-moritake/mojivs/commit/14a85d597b8c77f6b5e8154f75fcd62df2020cbd))
+
+### Testing
+
+- SVS クラスタリング挙動の回帰テストを追加
+  ([`2b63e03`](https://github.com/daiki-moritake/mojivs/commit/2b63e0353ce98c290f13d7e9bbd1d8817190e6f8))
+
+
 ## [0.3.0] - 2026-07-21
 
 First release published to PyPI (installable with pip or uv).
